@@ -116,6 +116,7 @@ in
                 andalso (#name d) = "Engineering")
   yield (#name e)
 end;
+val it = ["Shaggy","Scooby"] : string list
 *)
 
 (*) in (defining the "in_" function ourselves)
@@ -130,6 +131,67 @@ in
                 yield (#deptno d))
   yield (#name e)
 end;
+val it = ["Shaggy","Scooby"] : string list
+*)
+
+(*) foldl function (built into SML)
+let
+  fun foldl f start [] = start
+    | foldl f start (hd :: tl) = foldl f (f (start, hd)) tl
+in
+  foldl (fn (x, y) => x + y) 0 [2,3,4]
+end;
+
+(*) "group by" via higher-order functions
+(*
+let
+  fun foldl f start [] = start
+    | foldl f start (hd :: tl) = foldl f (f (start, hd)) tl;
+  fun map f [] = []
+    | map f (hd :: tl) = (f hd) :: (map f tl);
+  fun computeAgg (extractor, folder) list =
+      foldl folder (map extractor list);
+  fun aggregate aggFns list =
+      map (computeAgg list) aggFns;
+  fun sum (x, y) = x + y;
+in
+  aggregate [(fn {id=id1,name=name1,deptno=deptno1} => id1, sum)] emps
+end;
+*)
+
+(*) Basic 'group'
+from e in emps
+group (#deptno e) as deptno
+  compute sum of (#id e) as sumId,
+          count of e as count;
+
+(*) 'group' with 'where' and complex argument to 'sum'
+from e in emps
+where (#deptno e) < 30
+group (#deptno e) as deptno
+  compute sum of (#id e) as sumId,
+          min of (#id e) + (#deptno e) as minIdPlusDeptno;
+
+(*) 'group' with join
+from e in emps, d in depts
+where (#deptno e) = (#deptno d)
+group (#deptno e) as deptno,
+ (#name e) as dname
+compute sum of (#id e) as sumId;
+
+(*) empty 'group'
+from e in emps
+group compute sum of (#id e) as sumId;
+
+(*) Should we allow 'yield' following 'group'? Here's a possible syntax.
+(*) We need to introduce a variable name, but "as g" syntax isn't great.
+(*
+from emps as e
+group (#deptno e) as deptno
+  compute sum of (#id e) as sumId,
+          count of e as count
+  as g
+yield {deptno = (#deptno g), avgId = (#sumId g) / (#count g)}
 *)
 
 (*) End relational.sml

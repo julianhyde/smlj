@@ -1102,6 +1102,29 @@ public class MainTest {
         is(Collections.singletonList(Arrays.asList(eRow, bRow))));
   }
 
+  @Test public void testFromGroup() {
+    final String ml = "val x =\n"
+        + "let\n"
+        + "  val emps =\n"
+        + "    [{id = 100, name = \"Fred\", deptno = 10},\n"
+        + "     {id = 101, name = \"Velma\", deptno = 20}]\n"
+        + "in\n"
+        + "  from e in emps\n"
+        + "    group #deptno e as deptno\n"
+        + "    compute sum of #id e as sumId\n"
+        + "end";
+    final String expected = "val x = "
+        + "let val emps = "
+        + "[{deptno = 10, id = 100, name = \"Fred\"},"
+        + " {deptno = 20, id = 101, name = \"Velma\"}] "
+        + "in"
+        + " from e in emps"
+        + " group #deptno e as deptno"
+        + " compute sum of #id e as sumId "
+        + "end";
+    assertParseDecl(ml, isAst(Ast.ValDecl.class, expected));
+  }
+
   @Test public void testError() {
     assertError("fn x y => x + y",
         is("Error: non-constructor applied to argument in pattern: x"));

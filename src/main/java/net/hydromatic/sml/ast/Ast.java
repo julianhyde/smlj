@@ -25,6 +25,7 @@ import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Iterables;
 
 import net.hydromatic.sml.util.Ord;
+import net.hydromatic.sml.util.Pair;
 
 import java.util.List;
 import java.util.Map;
@@ -1217,8 +1218,12 @@ public class Ast {
     /** The expression in the yield clause, or the default yield expression
      * if not specified; never null. */
     public final Exp yieldExpOrDefault;
+    public final ImmutableList<Pair<Exp, Id>> groupExps;
+    public final ImmutableList<Aggregate> aggregates;
 
-    From(Pos pos, ImmutableMap<Id, Exp> sources, Exp filterExp, Exp yieldExp) {
+    From(Pos pos, ImmutableMap<Id, Exp> sources, Exp filterExp, Exp yieldExp,
+        ImmutableList<Pair<Exp, Id>> groupExps,
+        ImmutableList<Aggregate> aggregates) {
       super(pos, Op.FROM);
       this.sources = Objects.requireNonNull(sources);
       this.filterExp = filterExp; // may be null
@@ -1233,6 +1238,8 @@ public class Ast {
                 .collect(Collectors.toMap(id -> id.name, id -> id)));
       }
       Objects.requireNonNull(this.yieldExpOrDefault);
+      this.groupExps = groupExps; // may be null
+      this.aggregates = aggregates; // may be null
     }
 
     public Exp accept(Shuttle shuttle) {
@@ -1240,13 +1247,37 @@ public class Ast {
     }
 
     @Override AstWriter unparse(AstWriter w, int left, int right) {
-      Ord.forEach(sources, (i, id, exp) ->
-          w.append(i == 0 ? "from " : ", ").append(exp, 0, 0)
-              .append(" as ").append(id, 0, 0));
-      if (filterExp != null) {
-        w.append(" where ").append(filterExp, 0, 0);
+      if (left > op.left || op.right < right) {
+        return w.append("(").append(this, 0, 0).append(")");
+      } else {
+        Ord.forEach(sources, (i, id, exp) ->
+            w.append(i == 0 ? "from " : ", ")
+                .append(id, 0, 0).append(" in ").append(exp, 0, 0));
+        if (filterExp != null) {
+          w.append(" where ").append(filterExp, 0, 0);
+        }
+        if (groupExps != null) {
+          w.append(" group ");
+          Pair.forEachIndexed(groupExps, (i, exp, id) ->
+              w.append(i == 0 ? "" : ", ")
+                  .append(exp, 0, 0)
+                  .append(" as ")
+                  .append(id, 0, 0));
+          if (aggregates != null) {
+            Ord.forEach(aggregates, (aggregate, i) ->
+                w.append(i == 0 ? " compute " : ", ")
+                    .append(aggregate.aggregate, 0, 0)
+                    .append(" of ")
+                    .append(aggregate.argument, 0, 0)
+                    .append(" as ")
+                    .append(aggregate.id, 0, 0));
+          }
+        }
+        if (yieldExp != null) {
+          w.append(" yield ").append(yieldExp, 0, 0);
+        }
+        return w;
       }
-      return w.append(" yield ").append(yieldExp, 0, 0);
     }
 
     /** Creates a copy of this {@code From} with given contents,
@@ -1284,6 +1315,32 @@ public class Ast {
     public Apply copy(Exp fn, Exp arg) {
       return this.fn.equals(fn) && this.arg.equals(arg) ? this
           : new Apply(pos, fn, arg);
+    }
+  }
+
+  /** Call to an aggregate function in a {@code compute} clause. */
+  public static class Aggregate extends AstNode {
+    public final Exp aggregate;
+    public final Exp argument;
+    public final Id id;
+
+    public Aggregate(Pos pos, Exp aggregate, Exp argument, Id id) {
+      super(pos, Op.AGGREGATE);
+      this.aggregate = Objects.requireNonNull(aggregate);
+      this.argument = Objects.requireNonNull(argument);
+      this.id = Objects.requireNonNull(id);
+    }
+
+    AstWriter unparse(AstWriter w, int left, int right) {
+      return w.append(aggregate, 0, 0)
+          .append(" of ")
+          .append(argument, 0, 0)
+          .append(" as ")
+          .append(id.name);
+    }
+
+    public AstNode accept(Shuttle shuttle) {
+      return shuttle.visit(this);
     }
   }
 }
