@@ -61,6 +61,7 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 import static net.hydromatic.sml.ast.AstBuilder.ast;
+import static net.hydromatic.sml.util.Static.toImmutableList;
 
 /** Resolves the type of an expression. */
 @SuppressWarnings("StaticPseudoFunctionalStyleMethod")
@@ -844,14 +845,14 @@ public class TypeResolver {
     case TUPLE_TYPE:
       final TupleType tupleType = (TupleType) type;
       return unifier.apply(TUPLE_TY_CON, tupleType.argTypes.stream()
-          .map(type1 -> toTerm(type1, subst)).collect(Collectors.toList()));
+          .map(type1 -> toTerm(type1, subst)).collect(toImmutableList()));
     case RECORD_TYPE:
       final RecordType recordType = (RecordType) type;
       //noinspection unchecked
       return unifier.apply(
           recordOp((NavigableSet) recordType.argNameTypes.keySet()),
           recordType.argNameTypes.values().stream()
-              .map(type1 -> toTerm(type1, subst)).collect(Collectors.toList()));
+              .map(type1 -> toTerm(type1, subst)).collect(toImmutableList()));
     case LIST:
       final ListType listType = (ListType) type;
       return unifier.apply(LIST_TY_CON,

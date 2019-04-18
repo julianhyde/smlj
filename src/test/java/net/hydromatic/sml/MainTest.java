@@ -1123,6 +1123,7 @@ public class MainTest {
         + " compute sum of #id e as sumId "
         + "end";
     assertParseDecl(ml, isAst(Ast.ValDecl.class, expected));
+    assertEval("let " + ml + " in x end", is(0));
   }
 
   @Test public void testError() {
