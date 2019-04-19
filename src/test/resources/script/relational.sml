@@ -165,6 +165,14 @@ group (#deptno e) as deptno
   compute sum of (#id e) as sumId,
           count of e as count;
 
+(*) 'group' with no aggregates
+from e in emps
+group (#deptno e) as deptno;
+
+(*) composite 'group' with no aggregates
+from e in emps
+group (#deptno e) as deptno, (#id e) mod 2 as idMod2;
+
 (*) 'group' with 'where' and complex argument to 'sum'
 from e in emps
 where (#deptno e) < 30

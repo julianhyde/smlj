@@ -27,7 +27,7 @@ import com.google.common.collect.Iterables;
 import net.hydromatic.sml.util.Ord;
 import net.hydromatic.sml.util.Pair;
 
-import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -1228,7 +1228,12 @@ public class Ast {
       this.sources = Objects.requireNonNull(sources);
       this.filterExp = filterExp; // may be null
       this.yieldExp = yieldExp; // may be null
-      if (yieldExp != null) {
+      if (groupExps != null) {
+        assert yieldExp == null;
+        final Map<String, Exp> fields = new HashMap<>();
+        groupExps.forEach(pair -> fields.put(pair.right.name, pair.left));
+        this.yieldExpOrDefault = ast.record(pos, fields);
+      } else if (yieldExp != null) {
         this.yieldExpOrDefault = this.yieldExp;
       } else if (sources.size() == 1) {
         this.yieldExpOrDefault = Iterables.getOnlyElement(sources.keySet());
@@ -1283,12 +1288,15 @@ public class Ast {
     /** Creates a copy of this {@code From} with given contents,
      * or this if the contents are the same. */
     public From copy(Map<Ast.Id, Ast.Exp> sources, Ast.Exp filterExp,
-        Ast.Exp yieldExp) {
+        Ast.Exp yieldExp, java.util.List<Pair<Exp, Id>> groupExps,
+        java.util.List<Aggregate> aggregates) {
       return this.sources.equals(sources)
           && Objects.equals(this.filterExp, filterExp)
           && Objects.equals(this.yieldExp, yieldExp)
+          && Objects.equals(this.groupExps, groupExps)
+          && Objects.equals(this.aggregates, aggregates)
           ? this
-          : ast.from(pos, sources, filterExp, yieldExp);
+          : ast.from(pos, sources, filterExp, yieldExp, groupExps, aggregates);
     }
 
   }

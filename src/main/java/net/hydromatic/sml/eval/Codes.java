@@ -18,9 +18,13 @@
  */
 package net.hydromatic.sml.eval;
 
+import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
+import com.google.common.collect.ListMultimap;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
 import com.google.common.primitives.Chars;
 
 import net.hydromatic.sml.ast.Ast;
@@ -258,34 +262,44 @@ public abstract class Codes {
   }
 
   public static Code fromGroup(Map<Ast.Id, Code> sources, Code filterCode,
-      ImmutableList<Code> unusedCodes, ImmutableList<Code> unusedCodes2,
-      Code yieldCode) {
+      List<Code> groupCodes, List<Code> aggregateCodes) {
     final ImmutableList<Ast.Id> ids = ImmutableList.copyOf(sources.keySet());
+    final Code keyCode = tuple(groupCodes);
     return new Code() {
       @Override public Object eval(EvalEnv env) {
         final List<Iterable> values = new ArrayList<>();
         for (Code code : sources.values()) {
           values.add((Iterable) code.eval(env));
         }
-        final List list = new ArrayList();
-        loop(0, values, env, list);
+        final Object[] currentValues = new Object[sources.size()];
+        final ListMultimap<Object, Object> map = ArrayListMultimap.create();
+        loop(0, values, env, currentValues, map);
+
+        final List<List<Object>> list = new ArrayList<>();
+        for (Map.Entry<Object, List<Object>> entry
+            : Multimaps.asMap(map).entrySet()) {
+          final List<Object> tuple = new ArrayList<>();
+          tuple.addAll((List) entry.getKey());
+          list.add(tuple);
+        }
         return list;
       }
 
-      /** Generates the {@code i}th nested lopp of a cartesian product of the
+      /** Generates the {@code i}th nested loop of a cartesian product of the
        * values in {@code iterables}. */
       void loop(int i, List<Iterable> iterables, EvalEnv env,
-          List<Object> list) {
+          Object[] currentValues, Multimap<Object, Object> map) {
         if (i == iterables.size()) {
           if ((Boolean) filterCode.eval(env)) {
-            list.add(yieldCode.eval(env));
+            map.put(keyCode.eval(env), ImmutableList.copyOf(currentValues));
           }
         } else {
           final String name = ids.get(i).name;
           final Iterable iterable = iterables.get(i);
           for (Object o : iterable) {
             EvalEnv env2 = add(env, name, o);
-            loop(i + 1, iterables, env2, list);
+            currentValues[i] = o;
+            loop(i + 1, iterables, env2, currentValues, map);
           }
         }
       }

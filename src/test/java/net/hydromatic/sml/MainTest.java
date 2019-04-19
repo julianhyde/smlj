@@ -19,6 +19,7 @@
 package net.hydromatic.sml;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Sets;
 
 import net.hydromatic.sml.ast.Ast;
 import net.hydromatic.sml.ast.AstNode;
@@ -53,6 +54,7 @@ import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -200,6 +202,24 @@ public class MainTest {
     } catch (ParseException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  private static List<Object> list(Object... values) {
+    return Arrays.asList(values);
+  }
+
+  @SafeVarargs
+  private static <E> Matcher<Iterable<E>> equalsUnordered(E... elements) {
+    final Set<E> expectedSet = Sets.newHashSet(elements);
+    return new TypeSafeMatcher<Iterable<E>>() {
+      protected boolean matchesSafely(Iterable<E> item) {
+        return Sets.newHashSet((Iterable) item).equals(expectedSet);
+      }
+
+      public void describeTo(Description description) {
+        description.appendText("equalsUnordered").appendValue(expectedSet);
+      }
+    };
   }
 
   @Test public void testEmptyRepl() {
@@ -1102,12 +1122,38 @@ public class MainTest {
         is(Collections.singletonList(Arrays.asList(eRow, bRow))));
   }
 
+  @Test public void testFromGroupWithoutCompute() {
+    final String ml = "val x =\n"
+        + "let\n"
+        + "  val emps =\n"
+        + "    [{id = 100, name = \"Fred\", deptno = 10},\n"
+        + "     {id = 101, name = \"Velma\", deptno = 20},\n"
+        + "     {id = 102, name = \"Shaggy\", deptno = 10}]\n"
+        + "in\n"
+        + "  from e in emps group #deptno e as deptno\n"
+        + "end";
+    final String expected = "val x = "
+        + "let val emps = "
+        + "[{deptno = 10, id = 100, name = \"Fred\"},"
+        + " {deptno = 20, id = 101, name = \"Velma\"},"
+        + " {deptno = 10, id = 102, name = \"Shaggy\"}] "
+        + "in"
+        + " from e in emps"
+        + " group #deptno e as deptno "
+        + "end";
+    assertParseDecl(ml, isAst(Ast.ValDecl.class, expected));
+    String expression = "let " + ml + " in x end";
+    assertType(expression, is("{deptno:int} list"));
+    assertEval(expression, (Matcher) equalsUnordered(list(10), list(20)));
+  }
+
   @Test public void testFromGroup() {
     final String ml = "val x =\n"
         + "let\n"
         + "  val emps =\n"
         + "    [{id = 100, name = \"Fred\", deptno = 10},\n"
-        + "     {id = 101, name = \"Velma\", deptno = 20}]\n"
+        + "     {id = 101, name = \"Velma\", deptno = 20},\n"
+        + "     {id = 102, name = \"Shaggy\", deptno = 10}]\n"
         + "in\n"
         + "  from e in emps\n"
         + "    group #deptno e as deptno\n"
@@ -1116,14 +1162,17 @@ public class MainTest {
     final String expected = "val x = "
         + "let val emps = "
         + "[{deptno = 10, id = 100, name = \"Fred\"},"
-        + " {deptno = 20, id = 101, name = \"Velma\"}] "
+        + " {deptno = 20, id = 101, name = \"Velma\"},"
+        + " {deptno = 10, id = 102, name = \"Shaggy\"}] "
         + "in"
         + " from e in emps"
         + " group #deptno e as deptno"
         + " compute sum of #id e as sumId "
         + "end";
     assertParseDecl(ml, isAst(Ast.ValDecl.class, expected));
-    assertEval("let " + ml + " in x end", is(0));
+    String expression = "let " + ml + " in x end";
+    assertType(expression, is("{deptno:int} list"));
+    assertEval(expression, (Matcher) equalsUnordered(list(10), list(20)));
   }
 
   @Test public void testError() {

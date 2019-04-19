@@ -247,6 +247,23 @@ val it =
 
 (*) 'group' with 'where' and complex argument to 'sum'
 from e in emps
+
+(*) 'group' with no aggregates
+from e in emps
+group (#deptno e) as deptno;
+val it = [{deptno=20},{deptno=10},{deptno=30}] : ({deptno:int}) list
+
+
+(*) composite 'group' with no aggregates
+from e in emps
+group (#deptno e) as deptno, (#id e) mod 2 as idMod2;
+val it =
+  [{deptno=30,idMod2=0},{deptno=30,idMod2=1},{deptno=10,idMod2=0},
+   {deptno=20,idMod2=1}] : ({deptno:int, idMod2:int}) list
+
+
+(*) 'group' with 'where' and complex argument to 'sum'
+from e in emps
 where (#deptno e) < 30
 group (#deptno e) as deptno
   compute sum of (#id e) as sumId,

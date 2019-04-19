@@ -190,14 +190,9 @@ public class Compiler {
         for (Ast.Aggregate aggregate : from.aggregates) {
           aggregateCodes.add(compileAggregate(env, aggregate));
           labels.add(aggregate.id.name);
-
         }
-
-        final Ast.Exp yieldExp = from.yieldExpOrDefault;
-        final Code yieldCode = compile(env, yieldExp);
-
         return Codes.fromGroup(sourceCodes, filterCode, groupCodes.build(),
-            aggregateCodes.build(), yieldCode);
+            aggregateCodes.build());
       } else {
         final Ast.Exp yieldExp = from.yieldExpOrDefault;
         final Code yieldCode = compile(env2, yieldExp);
