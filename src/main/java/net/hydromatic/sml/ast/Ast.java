@@ -27,8 +27,8 @@ import com.google.common.collect.Iterables;
 import net.hydromatic.sml.util.Ord;
 import net.hydromatic.sml.util.Pair;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.ObjIntConsumer;
@@ -287,7 +287,7 @@ public class Ast {
   /** Record pattern. */
   public static class RecordPat extends Pat {
     public final boolean ellipsis;
-    public final Map<String, Pat> args;
+    public final java.util.Map<String, Pat> args;
 
     RecordPat(Pos pos, boolean ellipsis, ImmutableMap<String, Pat> args) {
       super(pos, Op.RECORD_PAT);
@@ -305,12 +305,8 @@ public class Ast {
 
     @Override AstWriter unparse(AstWriter w, int left, int right) {
       w.append("{");
-      Ord.forEach(args, (i, k, v) -> {
-        if (i > 0) {
-          w.append(", ");
-        }
-        w.append(k).append(" = ").append(v, 0, 0);
-      });
+      Ord.forEach(args, (i, k, v) ->
+          w.append(i > 0 ? ", " : "").append(k).append(" = ").append(v, 0, 0));
       if (ellipsis) {
         if (!args.isEmpty()) {
           w.append(", ");
@@ -464,7 +460,7 @@ public class Ast {
 
   /** Parse tree node of a record type. */
   public static class RecordType extends Type {
-    public final Map<String, Type> fieldTypes;
+    public final java.util.Map<String, Type> fieldTypes;
 
     /** Creates a TyVar. */
     RecordType(Pos pos, ImmutableMap<String, Type> fieldTypes) {
@@ -987,7 +983,7 @@ public class Ast {
 
   /** Record. */
   public static class Record extends Exp {
-    public final Map<String, Exp> args;
+    public final java.util.Map<String, Exp> args;
 
     Record(Pos pos, ImmutableSortedMap<String, Exp> args) {
       super(pos, Op.RECORD);
@@ -1004,12 +1000,8 @@ public class Ast {
 
     @Override AstWriter unparse(AstWriter w, int left, int right) {
       w.append("{");
-      Ord.forEach(args, (i, k, v) -> {
-        if (i > 0) {
-          w.append(", ");
-        }
-        w.append(k).append(" = ").append(v, 0, 0);
-      });
+      Ord.forEach(args, (i, k, v) ->
+          w.append(i > 0 ? ", " : "").append(k).append(" = ").append(v, 0, 0));
       return w.append("}");
     }
   }
@@ -1212,7 +1204,7 @@ public class Ast {
 
   /** From expression. */
   public static class From extends Exp {
-    public final Map<Id, Exp> sources;
+    public final java.util.Map<Id, Exp> sources;
     public final Exp filterExp;
     public final Exp yieldExp;
     /** The expression in the yield clause, or the default yield expression
@@ -1229,9 +1221,23 @@ public class Ast {
       this.filterExp = filterExp; // may be null
       this.yieldExp = yieldExp; // may be null
       if (groupExps != null) {
+        // The type of
+        //   from emps as e group by e1 as a, e2 as b compute sum of e3 as c
+        // is the same as the type of
+        //   {e1 as a, e2 as b, sum (map (fn e => c) list) as x}
         assert yieldExp == null;
-        final Map<String, Exp> fields = new HashMap<>();
+        final java.util.Map<String, Exp> fields = new HashMap<>();
         groupExps.forEach(pair -> fields.put(pair.right.name, pair.left));
+        final Literal aggResult = ast.intLiteral(BigDecimal.ZERO, pos); // FIXME
+        aggregates.forEach(aggregate -> {
+          final Pat pat = ast.idPat(pos, sources.keySet().iterator().next().name);
+          fields.put(aggregate.id.name,
+              ast.apply(aggregate.aggregate,
+                  ast.map(pos,
+                      ast.fn(pos,
+                          ast.match(pos, pat, aggregate.argument)),
+                      aggResult))); // TODO:
+        });
         this.yieldExpOrDefault = ast.record(pos, fields);
       } else if (yieldExp != null) {
         this.yieldExpOrDefault = this.yieldExp;
@@ -1287,7 +1293,7 @@ public class Ast {
 
     /** Creates a copy of this {@code From} with given contents,
      * or this if the contents are the same. */
-    public From copy(Map<Ast.Id, Ast.Exp> sources, Ast.Exp filterExp,
+    public From copy(java.util.Map<Ast.Id, Ast.Exp> sources, Ast.Exp filterExp,
         Ast.Exp yieldExp, java.util.List<Pair<Exp, Id>> groupExps,
         java.util.List<Aggregate> aggregates) {
       return this.sources.equals(sources)
@@ -1349,6 +1355,31 @@ public class Ast {
 
     public AstNode accept(Shuttle shuttle) {
       return shuttle.visit(this);
+    }
+  }
+
+  /** Call to the built-in "map" function.
+   * "Map(e1, e2)" represents "map e1 e2".
+   * For example "map (fn x => x + 1) [1,2,3]" returns "[2,3,4]". */
+  public static class Map extends Exp {
+    public final Exp e1;
+    public final Exp e2;
+
+    public Map(Pos pos, Exp e1, Exp e2) {
+      super(pos, Op.MAP);
+      this.e1 = e1;
+      this.e2 = e2;
+    }
+
+    public Exp accept(Shuttle shuttle) {
+      return shuttle.visit(this);
+    }
+
+    AstWriter unparse(AstWriter w, int left, int right) {
+      return w.append("map ")
+          .append(e1, 0, 0)
+          .append(" ")
+          .append(e2, 0, 0);
     }
   }
 }

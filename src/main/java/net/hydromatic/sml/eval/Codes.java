@@ -29,6 +29,7 @@ import com.google.common.primitives.Chars;
 
 import net.hydromatic.sml.ast.Ast;
 import net.hydromatic.sml.compile.BuiltIn;
+import net.hydromatic.sml.compile.Environment;
 import net.hydromatic.sml.type.Type;
 import net.hydromatic.sml.util.MapList;
 
@@ -280,6 +281,10 @@ public abstract class Codes {
             : Multimaps.asMap(map).entrySet()) {
           final List<Object> tuple = new ArrayList<>();
           tuple.addAll((List) entry.getKey());
+          final List<Object> rows = entry.getValue(); // rows in this bucket
+          for (Code aggregateCode : aggregateCodes) {
+            tuple.add(aggregateCode.eval(add(env, "list", rows)));
+          }
           list.add(tuple);
         }
         return list;
@@ -794,6 +799,15 @@ public abstract class Codes {
     final Set<E> set = new LinkedHashSet<>(set1);
     set.removeAll(set0);
     return set;
+  }
+
+  public static Code aggregate(Environment env, Code aggregate, Code argumentCode) {
+    return new Code() {
+      public Object eval(EvalEnv env) {
+        final List list = (List) env.get("list");
+        return 3;
+      }
+    };
   }
 
   /** A code that evaluates expressions and creates a tuple with the results.

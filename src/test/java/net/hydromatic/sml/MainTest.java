@@ -1171,7 +1171,7 @@ public class MainTest {
         + "end";
     assertParseDecl(ml, isAst(Ast.ValDecl.class, expected));
     String expression = "let " + ml + " in x end";
-    assertType(expression, is("{deptno:int} list"));
+    assertType(expression, is("{deptno:int, sumId:int} list"));
     assertEval(expression, (Matcher) equalsUnordered(list(10), list(20)));
   }
 

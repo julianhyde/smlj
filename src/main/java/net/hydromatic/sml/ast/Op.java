@@ -109,7 +109,8 @@ public enum Op {
   CASE,
   FROM,
   AGGREGATE,
-  IF;
+  IF,
+  MAP;
 
   /** Padded name, e.g. " : ". */
   public final String padded;

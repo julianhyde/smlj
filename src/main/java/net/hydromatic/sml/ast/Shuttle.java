@@ -235,6 +235,10 @@ public class Shuttle {
   public Ast.Pat visit(Ast.Con0Pat con0Pat) {
     return ast.con0Pat(con0Pat.pos, con0Pat.tyCon.accept(this));
   }
+
+  public Ast.Exp visit(Ast.Map map) {
+    return ast.map(map.pos, map.e1.accept(this), map.e2.accept(this));
+  }
 }
 
 // End Shuttle.java

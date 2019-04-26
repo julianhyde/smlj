@@ -369,6 +369,10 @@ public enum AstBuilder {
       Ast.Id id) {
     return new Ast.Aggregate(pos, aggregate, argument, id);
   }
+
+  public Ast.Exp map(Pos pos, Ast.Exp e1, Ast.Exp e2) {
+    return new Ast.Map(pos, e1, e2);
+  }
 }
 
 // End AstBuilder.java

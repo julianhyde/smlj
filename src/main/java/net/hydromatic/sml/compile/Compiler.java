@@ -188,7 +188,9 @@ public class Compiler {
         final ImmutableList.Builder<Code> aggregateCodes =
             ImmutableList.builder();
         for (Ast.Aggregate aggregate : from.aggregates) {
-          aggregateCodes.add(compileAggregate(env, aggregate));
+          final Code argumentCode = compile(env, aggregate.argument);
+          final Code aggregateCode = compile(env, aggregate.aggregate);
+          aggregateCodes.add(Codes.aggregate(env, aggregateCode, argumentCode));
           labels.add(aggregate.id.name);
         }
         return Codes.fromGroup(sourceCodes, filterCode, groupCodes.build(),
