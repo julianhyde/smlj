@@ -98,11 +98,11 @@ public class TypeResolver {
       return Resolved.of(decl, node2,
           new TypeMap(typeSystem, map, (Unifier.Substitution) result));
     } else {
-      throw new RuntimeException("Cannot deduce type: " + result
-          + ";\n"
+      final String extra = ";\n"
           + " term pairs:\n"
           + terms.stream().map(Object::toString)
-              .collect(Collectors.joining("\n")));
+          .collect(Collectors.joining("\n"));
+      throw new RuntimeException("Cannot deduce type: " + result);
     }
   }
 
@@ -830,10 +830,6 @@ public class TypeResolver {
     }
   }
 
-  static <E> List<E> skip(List<E> list) {
-    return list.subList(1, list.size());
-  }
-
   /** Empty type environment. */
   enum EmptyTypeEnv implements TypeEnv {
     INSTANCE;
@@ -880,13 +876,10 @@ public class TypeResolver {
   /** Visitor that converts type terms into actual types. */
   private static class TermToTypeConverter
       implements Unifier.TermVisitor<Type> {
-    private TypeSystem typeSystem;
-    private final Unifier.Substitution substitution;
+    private final TypeMap typeMap;
 
-    TermToTypeConverter(TypeSystem typeSystem,
-        Unifier.Substitution substitution) {
-      this.typeSystem = typeSystem;
-      this.substitution = substitution;
+    TermToTypeConverter(TypeMap typeMap) {
+      this.typeMap = typeMap;
     }
 
     public Type visit(Unifier.Sequence sequence) {
@@ -896,7 +889,7 @@ public class TypeResolver {
         assert sequence.terms.size() == 2;
         final Type paramType = sequence.terms.get(0).accept(this);
         final Type resultType = sequence.terms.get(1).accept(this);
-        return typeSystem.fnType(paramType, resultType);
+        return typeMap.typeSystem.fnType(paramType, resultType);
 
       case TUPLE_TY_CON:
         assert sequence.terms.size() >= 2;
@@ -904,12 +897,12 @@ public class TypeResolver {
         for (Unifier.Term term : sequence.terms) {
           argTypes.add(term.accept(this));
         }
-        return typeSystem.tupleType(argTypes.build());
+        return typeMap.typeSystem.tupleType(argTypes.build());
 
       case LIST_TY_CON:
         assert sequence.terms.size() == 1;
         final Type elementType = sequence.terms.get(0).accept(this);
-        return typeSystem.listType(elementType);
+        return typeMap.typeSystem.listType(elementType);
 
       case "bool":
       case "char":
@@ -918,7 +911,7 @@ public class TypeResolver {
       case "string":
       case "unit":
       default:
-        final Type type = typeSystem.lookupOpt(sequence.operator);
+        final Type type = typeMap.typeSystem.lookupOpt(sequence.operator);
         if (type != null) {
           return type;
         }
@@ -930,7 +923,7 @@ public class TypeResolver {
             for (Unifier.Term term : sequence.terms) {
               argTypes.add(term.accept(this));
             }
-            return typeSystem.recordType(argNames, argTypes.build());
+            return typeMap.typeSystem.recordType(argNames, argTypes.build());
           }
         }
         throw new AssertionError("unknown type constructor "
@@ -939,7 +932,11 @@ public class TypeResolver {
     }
 
     public Type visit(Unifier.Variable variable) {
-      final Unifier.Term term = substitution.resultMap.get(variable);
+      final Unifier.Term term = typeMap.substitution.resultMap.get(variable);
+      if (term == null) {
+        return typeMap.typeVars.computeIfAbsent(variable.toString(),
+            varName -> new TypeVar(typeMap.typeVars.size()));
+      }
       return term.accept(this);
     }
   }
@@ -991,23 +988,23 @@ public class TypeResolver {
     final TypeSystem typeSystem;
     final Map<AstNode, Unifier.Term> nodeTypeTerms;
     final Unifier.Substitution substitution;
+    final Map<String, TypeVar> typeVars = new HashMap<>();
 
     TypeMap(TypeSystem typeSystem, Map<AstNode, Unifier.Term> nodeTypeTerms,
         Unifier.Substitution substitution) {
       this.typeSystem = Objects.requireNonNull(typeSystem);
       this.nodeTypeTerms = ImmutableMap.copyOf(nodeTypeTerms);
-      this.substitution = Objects.requireNonNull(substitution);
+      this.substitution = Objects.requireNonNull(substitution.resolve());
     }
 
-    private Type termToType(Unifier.Term term,
-        Unifier.Substitution substitution) {
-      return term.accept(new TermToTypeConverter(typeSystem, substitution));
+    private Type termToType(Unifier.Term term) {
+      return term.accept(new TermToTypeConverter(this));
     }
 
     /** Returns a type of an AST node. */
     public Type getType(AstNode node) {
       final Unifier.Term term = Objects.requireNonNull(nodeTypeTerms.get(node));
-      return termToType(term, substitution);
+      return termToType(term);
     }
 
     /** Returns whether an AST node has a type.
