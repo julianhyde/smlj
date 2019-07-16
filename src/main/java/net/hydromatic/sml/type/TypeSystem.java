@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /** A table that contains all types in use, indexed by their description (e.g.
  * "{@code int -> int}"). */
@@ -206,6 +207,14 @@ public class TypeSystem {
 
   public Type typeVariable(int ordinal) {
     return PrimitiveType.INT; // TODO:
+  }
+
+  public Type apply(Type type, List<Type> types) {
+    final String description =
+        types.stream().map(Type::description)
+            .collect(Collectors.joining(",", "<", ">"))
+        + type.description();
+    return new ApplyType(type, ImmutableList.copyOf(types), description);
   }
 
   /** Placeholder for a type that is being recursively defined.

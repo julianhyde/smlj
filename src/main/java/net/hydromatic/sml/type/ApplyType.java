@@ -18,31 +18,23 @@
  */
 package net.hydromatic.sml.type;
 
-import net.hydromatic.sml.eval.Unit;
+import com.google.common.collect.ImmutableList;
+
+import net.hydromatic.sml.ast.Op;
 
 import java.util.Objects;
 
-/** Binding of a name to a type and a value.
- *
- * <p>Used in {@link net.hydromatic.sml.compile.Environment}. */
-public class Binding {
-  public final String name;
+/** Type that is a polymorphic type applied to a set of types. */
+public class ApplyType extends BaseType {
   public final Type type;
-  public final Object value;
+  public final ImmutableList<Type> types;
 
-  public Binding(String name, Type type, Object value) {
-    this.name = name;
+  protected ApplyType(Type type, ImmutableList<Type> types,
+      String description) {
+    super(Op.APPLY_TYPE, description);
     this.type = Objects.requireNonNull(type);
-    this.value = Objects.requireNonNull(value);
-  }
-
-  @Override public String toString() {
-    if (value == Unit.INSTANCE) {
-      return name + " = " + type.description();
-    } else {
-      return name + " = " + value + ":" + type.description();
-    }
+    this.types = Objects.requireNonNull(types);
   }
 }
 
-// End Binding.java
+// End ApplyType.java

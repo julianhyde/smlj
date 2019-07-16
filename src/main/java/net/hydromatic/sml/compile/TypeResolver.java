@@ -22,6 +22,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import com.google.common.collect.MoreCollectors;
 
 import net.hydromatic.sml.ast.Ast;
 import net.hydromatic.sml.ast.AstNode;
@@ -486,12 +487,13 @@ public class TypeResolver {
 
     case NAMED_TYPE:
       final Ast.NamedType namedType = (Ast.NamedType) type;
+      final Type genericType = typeSystem.lookup(namedType.name);
       if (namedType.types.isEmpty()) {
-        return typeSystem.lookup(namedType.name);
+        return genericType;
       }
-      // fall through
-      final Type lookup = typeSystem.lookup(namedType.name);
-      return lookup;
+      final List<Type> typeList = namedType.types.stream().map(t -> toType(t))
+          .collect(ImmutableList.toImmutableList());
+      return typeSystem.apply(genericType, typeList);
 
     default:
       throw new AssertionError("cannot convert type " + type);

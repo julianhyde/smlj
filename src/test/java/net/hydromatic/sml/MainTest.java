@@ -945,6 +945,8 @@ public class MainTest {
         + "  NODE (LEAF 1, NODE (LEAF 2, LEAF 3))\n"
         + "end";
     assertParseSame(ml);
+    assertType(ml, is("(INTEGER of int | RATIONAL of int * int | ZERO)"));
+    assertEval(ml, is(ImmutableList.of("RATIONAL", ImmutableList.of(2, 3))));
   }
 
   @Test public void testDatatype2() {
