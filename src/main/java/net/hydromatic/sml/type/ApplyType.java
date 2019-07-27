@@ -23,6 +23,7 @@ import com.google.common.collect.ImmutableList;
 import net.hydromatic.sml.ast.Op;
 
 import java.util.Objects;
+import java.util.function.Function;
 
 /** Type that is a polymorphic type applied to a set of types. */
 public class ApplyType extends BaseType {
@@ -34,6 +35,15 @@ public class ApplyType extends BaseType {
     super(Op.APPLY_TYPE, description);
     this.type = Objects.requireNonNull(type);
     this.types = Objects.requireNonNull(types);
+  }
+
+  public Type copy(TypeSystem typeSystem, Function<Type, Type> transform) {
+    final Type type2 = type.copy(typeSystem, transform);
+    final ImmutableList<Type> types2 =
+        types.stream().map(t -> t.copy(typeSystem, transform))
+            .collect(ImmutableList.toImmutableList());
+    return type == type2 && types.equals(types2) ? this
+        : typeSystem.apply(type2, types2);
   }
 }
 

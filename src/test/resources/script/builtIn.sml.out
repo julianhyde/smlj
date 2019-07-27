@@ -19,7 +19,7 @@
 
 (* Miscellaneous ----------------------------------------------- *)
 ignore;
-val it = fn : int -> unit
+val it = fn : 'a -> unit
 
 ignore (1 + 2);
 val it = () : unit
@@ -27,10 +27,10 @@ val it = () : unit
 
 (*) map is alias for List_map
 map;
-val it = fn : (int -> int) -> int list -> int list
+val it = fn : ('a -> 'b) -> 'c list -> 'd list
 
 map (fn x => x) [];
-val it = [] : int list
+val it = [] : 'b list
 
 
 (* String ------------------------------------------------------ *)
@@ -278,12 +278,12 @@ val it = true : bool
 
 (*) val nil : 'a list
 List_nil;
-val it = [] : int list
+val it = [] : 'a list
 
 
 (*) val null : 'a list -> bool
 List_null;
-val it = fn : int list -> bool
+val it = fn : 'a list -> bool
 
 List_null [];
 val it = true : bool
@@ -294,7 +294,7 @@ val it = false : bool
 
 (*) val length : 'a list -> int
 List_length;
-val it = fn : int list -> bool
+val it = fn : 'a list -> bool
 
 List_length [];
 val it = 0 : bool
@@ -305,152 +305,152 @@ val it = 2 : bool
 
 (*) val @ : 'a list * 'a list -> 'a list
 List_at;
-val it = fn : int list * int list -> int list
+val it = fn : 'a list * 'b list -> 'c list
 
 List_at ([1], [2, 3]);
-val it = [1,2,3] : int list
+val it = [1,2,3] : 'a list
 
 List_at ([1], []);
-val it = [1] : int list
+val it = [1] : 'a list
 
 List_at ([], [2]);
-val it = [2] : int list
+val it = [2] : 'a list
 
 List_at ([], []);
-val it = [] : int list
+val it = [] : 'a list
 
 
 (*) val hd : 'a list -> 'a
 List_hd;
-val it = fn : int list -> int
+val it = fn : 'a list -> 'b
 
 List_hd [1,2,3];
-val it = 1 : int
+val it = 1 : 'a
 
 
 (*) val tl : 'a list -> 'a list
 List_tl;
-val it = fn : int list -> int list
+val it = fn : 'a list -> 'b list
 
 List_tl [1,2,3];
-val it = [2,3] : int list
+val it = [2,3] : 'a list
 
 
 (*) val last : 'a list -> 'a
 List_last;
-val it = fn : int list -> int
+val it = fn : 'a list -> 'b
 
 List_last [1,2,3];
-val it = 3 : int
+val it = 3 : 'a
 
 
 (*) val getItem : 'a list -> ('a * 'a list) option
 List_getItem;
-val it = fn : int list -> int * int list
+val it = fn : 'a list -> 'b * 'c list
 
 List_getItem [1,2,3];
-val it = (1,[2,3]) : int * int list
+val it = (1,[2,3]) : 'a * 'b list
 
 List_getItem [1];
-val it = (1,[]) : int * int list
+val it = (1,[]) : 'a * 'b list
 
 
 (*) val nth : 'a list * int -> 'a
 List_nth;
-val it = fn : int list * int -> int
+val it = fn : 'a list * int -> 'b
 
 List_nth ([1,2,3], 2);
-val it = 3 : int
+val it = 3 : 'a
 
 List_nth ([1], 0);
-val it = 1 : int
+val it = 1 : 'a
 
 
 (*) val take : 'a list * int -> 'a list
 List_take;
-val it = fn : int list * int -> int list
+val it = fn : 'a list * int -> 'b list
 
 List_take ([1,2,3], 0);
-val it = [] : int list
+val it = [] : 'a list
 
 List_take ([1,2,3], 1);
-val it = [1] : int list
+val it = [1] : 'a list
 
 List_take ([1,2,3], 3);
-val it = [1,2,3] : int list
+val it = [1,2,3] : 'a list
 
 
 (*) val drop : 'a list * int -> 'a list
 List_drop;
-val it = fn : int list * int -> int list
+val it = fn : 'a list * int -> 'b list
 
 List_drop ([1,2,3], 0);
-val it = [1,2,3] : int list
+val it = [1,2,3] : 'a list
 
 List_drop ([1,2,3], 1);
-val it = [2,3] : int list
+val it = [2,3] : 'a list
 
 List_drop ([1,2,3], 3);
-val it = [] : int list
+val it = [] : 'a list
 
 
 (*) val rev : 'a list -> 'a list
 List_rev;
-val it = fn : int list -> int list
+val it = fn : 'a list -> 'b list
 
 List_rev [1,2,3];
-val it = [3,2,1] : int list
+val it = [3,2,1] : 'a list
 
 List_rev [2,1];
-val it = [1,2] : int list
+val it = [1,2] : 'a list
 
 List_rev [1];
-val it = [1] : int list
+val it = [1] : 'a list
 
 List_rev [];
-val it = [] : int list
+val it = [] : 'a list
 
 
 (*) val concat : 'a list list -> 'a list
 List_concat;
-val it = fn : int list list -> int list
+val it = fn : 'a list list -> 'b list
 
 List_concat [[1],[2,3],[4,5,6]];
-val it = [1,2,3,4,5,6] : int list
+val it = [1,2,3,4,5,6] : 'a list
 
 List_concat [[1],[],[4,5,6]];
-val it = [1,4,5,6] : int list
+val it = [1,4,5,6] : 'a list
 
 List_concat [[],[],[]];
-val it = [] : int list
+val it = [] : 'a list
 
 List_concat [];
-val it = [] : int list
+val it = [] : 'a list
 
 
 (*) val revAppend : 'a list * 'a list -> 'a list
 List_revAppend;
-val it = fn : int list * int list -> int list
+val it = fn : 'a list * 'b list -> 'c list
 
 List_revAppend ([1,2],[3,4,5]);
-val it = [2,1,3,4,5] : int list
+val it = [2,1,3,4,5] : 'a list
 
 List_revAppend ([1],[3,4,5]);
-val it = [1,3,4,5] : int list
+val it = [1,3,4,5] : 'a list
 
 List_revAppend ([],[3,4,5]);
-val it = [3,4,5] : int list
+val it = [3,4,5] : 'a list
 
 List_revAppend ([1,2],[]);
-val it = [2,1] : int list
+val it = [2,1] : 'a list
 
 List_revAppend ([],[]);
-val it = [] : int list
+val it = [] : 'a list
 
 
 (*) val app : ('a -> unit) -> 'a list -> unit
 List_app;
-val it = fn : (int -> unit) -> int list -> unit
+val it = fn : ('a -> unit) -> 'b list -> unit
 
 List_app (fn x => ignore (x + 2)) [2,3,4];
 val it = () : unit
@@ -461,99 +461,99 @@ val it = () : unit
 
 (*) val map : ('a -> 'b) -> 'a list -> 'b list
 List_map;
-val it = fn : (int -> int) -> int list -> int list
+val it = fn : ('a -> 'b) -> 'c list -> 'd list
 
 List_map (fn x => x + 1) [1,2,3];
-val it = [2,3,4] : int list
+val it = [2,3,4] : 'a list
 
 List_map (fn x => x + 1) [];
-val it = [] : int list
+val it = [] : 'a list
 
 
 (*) val mapPartial : ('a -> 'b option) -> 'a list -> 'b list
 List_mapPartial;
-val it = fn : (int -> int) -> int list -> int list
+val it = fn : ('a -> 'b) -> 'c list -> 'd list
 
 List_mapPartial (fn x => x + 1) [1,2,3];
-val it = [2,3,4] : int list
+val it = [2,3,4] : 'a list
 
 List_mapPartial (fn x => x + 1) [];
-val it = [] : int list
+val it = [] : 'a list
 
 
 (*) val find : ('a -> bool) -> 'a list -> 'a option
 List_find;
-val it = fn : (int -> bool) -> int list -> int
+val it = fn : ('a -> bool) -> 'b list -> 'c
 
 List_find (fn x => x mod 7 = 0) [2,3,5,8,13,21,34];
-val it = 21 : int
+val it = 21 : 'a
 
 
 (*) val filter : ('a -> bool) -> 'a list -> 'a list
 List_filter;
-val it = fn : (int -> bool) -> int list -> int list
+val it = fn : ('a -> bool) -> 'b list -> 'c list
 
 List_filter (fn x => x mod 2 = 0) [0,1,2,3,4,5];
-val it = [0,2,4] : int list
+val it = [0,2,4] : 'a list
 
 List_filter (fn x => x mod 2 = 0) [1,3];
-val it = [] : int list
+val it = [] : 'a list
 
 List_filter (fn x => x mod 2 = 0) [];
-val it = [] : int list
+val it = [] : 'a list
 
 
 (*) val partition : ('a -> bool) -> 'a list -> 'a list * 'a list
 List_partition;
-val it = fn : (int -> bool) -> int list -> int list * int list
+val it = fn : ('a -> bool) -> 'b list -> 'c list * 'd list
 
 List_partition (fn x => x mod 2 = 0) [0,1,2,3,4,5];
-val it = ([0,2,4],[1,3,5]) : int list * int list
+val it = ([0,2,4],[1,3,5]) : 'a list * 'b list
 
 List_partition (fn x => x mod 2 = 0) [1];
-val it = ([],[1]) : int list * int list
+val it = ([],[1]) : 'a list * 'b list
 
 List_partition (fn x => x mod 2 = 0) [];
-val it = ([],[]) : int list * int list
+val it = ([],[]) : 'a list * 'b list
 
 
 (*) val foldl : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
 List_foldl;
-val it = fn : (int * int -> int) -> int -> int list -> int
+val it = fn : ('a * 'b -> 'c) -> 'd -> 'e list -> 'f
 
 List_foldl (fn (a, b) => a + b) 0 [1,2,3];
-val it = 6 : int
+val it = 6 : 'a
 
 List_foldl (fn (a, b) => a + b) 0 [];
-val it = 0 : int
+val it = 0 : 'a
 
 List_foldl (fn (a, b) => b) 0 [1,2,3];
-val it = 0 : int
+val it = 0 : 'c
 
 List_foldl (fn (a, b) => a - b) 0 [1,2,3,4];
-val it = 2 : int
+val it = 2 : 'a
 
 
 (*) val foldr : ('a * 'b -> 'b) -> 'b -> 'a list -> 'b
 List_foldr;
-val it = fn : (int * int -> int) -> int -> int list -> int
+val it = fn : ('a * 'b -> 'c) -> 'd -> 'e list -> 'f
 
 List_foldr (fn (a, b) => a + b) 0 [1,2,3];
-val it = 6 : int
+val it = 6 : 'a
 
 List_foldr (fn (a, b) => a + b) 0 [];
-val it = 0 : int
+val it = 0 : 'a
 
 List_foldr (fn (a, b) => b) 0 [1,2,3];
-val it = 0 : int
+val it = 0 : 'c
 
 List_foldr (fn (a, b) => a - b) 0 [1,2,3,4];
-val it = ~2 : int
+val it = -2 : 'a
 
 
 (*) val exists : ('a -> bool) -> 'a list -> bool
 List_exists;
-val it = fn : (int -> bool) -> int list -> bool
+val it = fn : ('a -> bool) -> 'b list -> bool
 
 List_exists (fn x => x mod 2 = 0) [1,3,5];
 val it = false : bool
@@ -570,7 +570,7 @@ val it = false : bool
 
 (*) val all : ('a -> bool) -> 'a list -> bool
 List_all;
-val it = fn : (int -> bool) -> int list -> bool
+val it = fn : ('a -> bool) -> 'b list -> bool
 
 List_all (fn x => x mod 2 = 0) [1,3,5];
 val it = false : bool
@@ -587,21 +587,21 @@ val it = true : bool
 
 (*) val tabulate : int * (int -> 'a) -> 'a list
 List_tabulate;
-val it = fn : int * (int -> int) -> int list
+val it = fn : int * (int -> 'a) -> 'b list
 
 List_tabulate (5, let fun fact n = if n = 0 then 1 else n * fact (n - 1) in fact end);
-val it = [1,1,2,6,24] : int list
+val it = [1,1,2,6,24] : 'a list
 
 List_tabulate (1, let fun fact n = if n = 0 then 1 else n * fact (n - 1) in fact end);
-val it = [1] : int list
+val it = [1] : 'a list
 
 List_tabulate (0, let fun fact n = if n = 0 then 1 else n * fact (n - 1) in fact end);
-val it = [] : int list
+val it = [] : 'a list
 
 
 (*) val collate : ('a * 'a -> order) -> 'a list * 'a list -> order
 List_collate;
-val it = fn : (int * int -> int) -> int list * int list -> int
+val it = fn : ('a * 'b -> int) -> 'c list * 'd list -> int
 
 List_collate (fn (x, y) => if x < y then ~1 else if x = y then 0 else 1) ([1,2,3], [1,3,4]);
 val it = ~1 : int

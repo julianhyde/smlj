@@ -39,7 +39,7 @@ public class FnType extends BaseType {
     return paramType2 == paramType
         && resultType2 == resultType
         ? this
-        : new FnType(description, paramType2, resultType2);
+        : typeSystem.fnType(paramType2, resultType2);
   }
 }
 

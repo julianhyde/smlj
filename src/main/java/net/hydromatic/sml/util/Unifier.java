@@ -239,7 +239,8 @@ public abstract class Unifier {
 
     Variable(String name) {
       this.name = Objects.requireNonNull(name);
-      Preconditions.checkArgument(!name.equals(name.toLowerCase(Locale.ROOT)));
+      Preconditions.checkArgument(name.equals(name.toUpperCase(Locale.ROOT)),
+          "must be upper case: %s", name);
     }
 
     @Override public String toString() {

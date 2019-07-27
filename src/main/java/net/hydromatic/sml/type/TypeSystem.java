@@ -18,7 +18,6 @@
  */
 package net.hydromatic.sml.type;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Lists;
@@ -32,6 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.SortedMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -133,28 +133,25 @@ public class TypeSystem {
 
   /** Creates a record type. (Or a tuple type if the fields are named "1", "2"
    * etc.; or "unit" if the field list is empty.) */
-  public Type recordType(List<String> argNames, List<? extends Type> argTypes) {
-    Preconditions.checkArgument(argNames.size() == argTypes.size());
-    if (argNames.isEmpty()) {
+  public Type recordType(SortedMap<String, ? extends Type> argNameTypes) {
+    if (argNameTypes.isEmpty()) {
       return PrimitiveType.UNIT;
     }
-    final ImmutableSortedMap.Builder<String, Type> mapBuilder =
-        ImmutableSortedMap.orderedBy(RecordType.ORDERING);
-    Pair.forEach(argNames, argTypes, mapBuilder::put);
     final StringBuilder builder = new StringBuilder("{");
-    final ImmutableSortedMap<String, Type> map = mapBuilder.build();
-    map.forEach((name, type) -> {
+    final ImmutableSortedMap<String, Type> argNameTypes2 =
+        ImmutableSortedMap.copyOfSorted(argNameTypes);
+    argNameTypes2.forEach((name, type) -> {
       if (builder.length() > 1) {
         builder.append(", ");
       }
       builder.append(name).append(':').append(type.description());
     });
-    if (areContiguousIntegers(map.keySet())) {
-      return tupleType(ImmutableList.copyOf(map.values()));
+    if (areContiguousIntegers(argNameTypes2.keySet())) {
+      return tupleType(ImmutableList.copyOf(argNameTypes2.values()));
     }
     final String description = builder.append('}').toString();
     return this.typeByName.computeIfAbsent(description,
-        d -> new RecordType(d, map));
+        d -> new RecordType(d, argNameTypes2));
   }
 
   /** Returns whether the collection is ["1", "2", ... n]. */
@@ -205,16 +202,16 @@ public class TypeSystem {
     return typeConstructorByName.get(tyConName);
   }
 
-  public Type typeVariable(int ordinal) {
-    return PrimitiveType.INT; // TODO:
-  }
-
   public Type apply(Type type, List<Type> types) {
     final String description =
         types.stream().map(Type::description)
             .collect(Collectors.joining(",", "<", ">"))
         + type.description();
     return new ApplyType(type, ImmutableList.copyOf(types), description);
+  }
+
+  public TypeVar typeVariable(int ordinal) {
+    return new TypeVar(ordinal);
   }
 
   /** Placeholder for a type that is being recursively defined.

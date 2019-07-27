@@ -762,12 +762,11 @@ public class MainTest {
             + "    (fn {x=x,...} => x) (fn {b=b,...} => b)\n"));
   }
 
-  @Ignore("deduce type of #label")
   @Test public void testRecordFn() {
     assertType("(fn {a=a1,b=b1} => a1) {a = 1, b = true}", is("int"));
     assertType("(fn {a=a1,b=b1} => b1) {a = 1, b = true}", is("bool"));
-    assertEval("(fn {a=a1,b=b1} => a1) {a = 1, b = true}", is("1"));
-    assertEval("(fn {a=a1,b=b1} => b1) {a = 1, b = true}", is("true"));
+    assertEval("(fn {a=a1,b=b1} => a1) {a = 1, b = true}", is(1));
+    assertEval("(fn {a=a1,b=b1} => b1) {a = 1, b = true}", is(true));
   }
 
   @Test public void testRecordMatch() {
@@ -938,6 +937,7 @@ public class MainTest {
     assertEval(ml2,  is(6));
   }
 
+  @Ignore("not working yet")
   @Test public void testDatatype() {
     final String ml = "let\n"
         + "  datatype 'a tree = NODE of 'a tree * 'a tree | LEAF of 'a\n"

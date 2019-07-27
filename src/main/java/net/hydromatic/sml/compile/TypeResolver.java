@@ -21,12 +21,13 @@ package net.hydromatic.sml.compile;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Lists;
-import com.google.common.collect.MoreCollectors;
 
 import net.hydromatic.sml.ast.Ast;
 import net.hydromatic.sml.ast.AstNode;
 import net.hydromatic.sml.ast.Pos;
+import net.hydromatic.sml.type.ApplyType;
 import net.hydromatic.sml.type.DataType;
 import net.hydromatic.sml.type.DummyType;
 import net.hydromatic.sml.type.FnType;
@@ -38,6 +39,7 @@ import net.hydromatic.sml.type.TupleType;
 import net.hydromatic.sml.type.Type;
 import net.hydromatic.sml.type.TypeSystem;
 import net.hydromatic.sml.type.TypeVar;
+import net.hydromatic.sml.util.ConsList;
 import net.hydromatic.sml.util.MapList;
 import net.hydromatic.sml.util.MartelliUnifier;
 import net.hydromatic.sml.util.Pair;
@@ -67,11 +69,13 @@ public class TypeResolver {
   final List<TermVariable> terms = new ArrayList<>();
   final Map<AstNode, Unifier.Term> map = new HashMap<>();
   final Map<Unifier.Variable, Unifier.Action> actionMap = new HashMap<>();
+  final Map<String, TypeVar> tyVarMap = new HashMap<>();
 
   private static final String TUPLE_TY_CON = "tuple";
   private static final String LIST_TY_CON = "list";
   private static final String RECORD_TY_CON = "record";
   private static final String FN_TY_CON = "fn";
+  private static final String APPLY_TY_CON = "apply";
 
   private TypeResolver(TypeSystem typeSystem) {
     this.typeSystem = Objects.requireNonNull(typeSystem);
@@ -491,9 +495,15 @@ public class TypeResolver {
       if (namedType.types.isEmpty()) {
         return genericType;
       }
-      final List<Type> typeList = namedType.types.stream().map(t -> toType(t))
+      //noinspection UnstableApiUsage
+      final List<Type> typeList = namedType.types.stream().map(this::toType)
           .collect(ImmutableList.toImmutableList());
       return typeSystem.apply(genericType, typeList);
+
+    case TY_VAR:
+      final Ast.TyVar tyVar = (Ast.TyVar) type;
+      return tyVarMap.computeIfAbsent(tyVar.name,
+          name -> typeSystem.typeVariable(tyVarMap.size()));
 
     default:
       throw new AssertionError("cannot convert type " + type);
@@ -799,6 +809,12 @@ public class TypeResolver {
     }
   }
 
+  private List<Unifier.Term> toTerms(Iterable<? extends Type> types) {
+    final ImmutableList.Builder<Unifier.Term> terms = ImmutableList.builder();
+    types.forEach(type -> terms.add(toTerm(type)));
+    return terms.build();
+  }
+
   private Unifier.Term toTerm(PrimitiveType type) {
     return unifier.atom(type.description());
   }
@@ -807,6 +823,8 @@ public class TypeResolver {
     switch (type.op()) {
     case ID:
       return toTerm((PrimitiveType) type);
+    case TY_VAR:
+      return unifier.variable();
     case DATA_TYPE:
     case TEMPORARY_DATA_TYPE:
       return unifier.atom(((NamedType) type).name());
@@ -814,6 +832,11 @@ public class TypeResolver {
       final FnType fnType = (FnType) type;
       return unifier.apply(FN_TY_CON, toTerm(fnType.paramType),
           toTerm(fnType.resultType));
+    case APPLY_TYPE:
+      final ApplyType applyType = (ApplyType) type;
+      final Unifier.Term term = toTerm(applyType.type);
+      final List<Unifier.Term> terms = toTerms(applyType.types);
+      return unifier.apply(APPLY_TY_CON, ConsList.of(term, terms));
     case TUPLE_TYPE:
       final TupleType tupleType = (TupleType) type;
       return unifier.apply(TUPLE_TY_CON, tupleType.argTypes.stream()
@@ -828,7 +851,7 @@ public class TypeResolver {
       return unifier.apply(LIST_TY_CON,
           toTerm(listType.elementType));
     default:
-      throw new AssertionError("unknown type: " + type);
+      throw new AssertionError("unknown type: " + type.description());
     }
   }
 
@@ -886,6 +909,7 @@ public class TypeResolver {
 
     public Type visit(Unifier.Sequence sequence) {
       final ImmutableList.Builder<Type> argTypes;
+      final ImmutableSortedMap.Builder<String, Type> argNameTypes;
       switch (sequence.operator) {
       case FN_TY_CON:
         assert sequence.terms.size() == 2;
@@ -921,11 +945,10 @@ public class TypeResolver {
           // E.g. "record:a:b" becomes record type "{a:t0, b:t1}".
           final List<String> argNames = fieldList(sequence);
           if (argNames != null) {
-            argTypes = ImmutableList.builder();
-            for (Unifier.Term term : sequence.terms) {
-              argTypes.add(term.accept(this));
-            }
-            return typeMap.typeSystem.recordType(argNames, argTypes.build());
+            argNameTypes = ImmutableSortedMap.orderedBy(RecordType.ORDERING);
+            Pair.forEach(argNames, sequence.terms, (name, term) ->
+                argNameTypes.put(name, term.accept(this)));
+            return typeMap.typeSystem.recordType(argNameTypes.build());
           }
         }
         throw new AssertionError("unknown type constructor "
