@@ -484,9 +484,8 @@ public class Ast {
 
     AstWriter unparse(AstWriter w, int left, int right) {
       w.append("{");
-      final int[] i = {0};
-      fieldTypes.forEach((field, type) ->
-          w.append(i[0]++ > 0 ? ", " : "")
+      Ord.forEach(fieldTypes, (i, field, type) ->
+          w.append(i > 0 ? ", " : "")
               .append(field).append(": ").append(type, 0, 0));
       return w.append("}");
     }
