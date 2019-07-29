@@ -1123,8 +1123,7 @@ public class MainTest {
   }
 
   @Test public void testFromGroupWithoutCompute() {
-    final String ml = "val x =\n"
-        + "let\n"
+    final String ml = "let\n"
         + "  val emps =\n"
         + "    [{id = 100, name = \"Fred\", deptno = 10},\n"
         + "     {id = 101, name = \"Velma\", deptno = 20},\n"
@@ -1132,8 +1131,7 @@ public class MainTest {
         + "in\n"
         + "  from e in emps group #deptno e as deptno\n"
         + "end";
-    final String expected = "val x = "
-        + "let val emps = "
+    final String expected = "let val emps = "
         + "[{deptno = 10, id = 100, name = \"Fred\"},"
         + " {deptno = 20, id = 101, name = \"Velma\"},"
         + " {deptno = 10, id = 102, name = \"Shaggy\"}] "
@@ -1141,15 +1139,14 @@ public class MainTest {
         + " from e in emps"
         + " group #deptno e as deptno "
         + "end";
-    assertParseDecl(ml, isAst(Ast.ValDecl.class, expected));
-    String expression = "let " + ml + " in x end";
-    assertType(expression, is("{deptno:int} list"));
-    assertEval(expression, (Matcher) equalsUnordered(list(10), list(20)));
+    assertParseDecl("val x = " + ml,
+        isAst(Ast.ValDecl.class, "val x = " + expected));
+    assertType(ml, is("{deptno:int} list"));
+    assertEval(ml, (Matcher) equalsUnordered(list(10), list(20)));
   }
 
   @Test public void testFromGroup() {
-    final String ml = "val x =\n"
-        + "let\n"
+    final String ml = "let\n"
         + "  val emps =\n"
         + "    [{id = 100, name = \"Fred\", deptno = 10},\n"
         + "     {id = 101, name = \"Velma\", deptno = 20},\n"
@@ -1159,8 +1156,7 @@ public class MainTest {
         + "    group #deptno e as deptno\n"
         + "    compute sum of #id e as sumId\n"
         + "end";
-    final String expected = "val x = "
-        + "let val emps = "
+    final String expected = "let val emps = "
         + "[{deptno = 10, id = 100, name = \"Fred\"},"
         + " {deptno = 20, id = 101, name = \"Velma\"},"
         + " {deptno = 10, id = 102, name = \"Shaggy\"}] "
@@ -1169,10 +1165,10 @@ public class MainTest {
         + " group #deptno e as deptno"
         + " compute sum of #id e as sumId "
         + "end";
-    assertParseDecl(ml, isAst(Ast.ValDecl.class, expected));
-    String expression = "let " + ml + " in x end";
-    assertType(expression, is("{deptno:int, sumId:int} list"));
-    assertEval(expression, (Matcher) equalsUnordered(list(10), list(20)));
+    assertParseDecl("val x = " + ml,
+        isAst(Ast.ValDecl.class, "val x = " + expected));
+    assertType(ml, is("{deptno:int, sumId:int} list"));
+    assertEval(ml, (Matcher) equalsUnordered(list(10), list(20)));
   }
 
   @Test public void testError() {

@@ -22,6 +22,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedMap;
 
+import net.hydromatic.sml.compile.BuiltIn;
 import net.hydromatic.sml.eval.Unit;
 import net.hydromatic.sml.util.Pair;
 
@@ -371,6 +372,9 @@ public enum AstBuilder {
   }
 
   public Ast.Exp map(Pos pos, Ast.Exp e1, Ast.Exp e2) {
+    if (true) {
+      return apply(apply(id(pos, BuiltIn.MAP.mlName), e1), e2);
+    }
     return new Ast.Map(pos, e1, e2);
   }
 }
