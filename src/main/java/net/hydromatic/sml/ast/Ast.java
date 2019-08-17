@@ -1331,7 +1331,11 @@ public class Ast {
     }
   }
 
-  /** Call to an aggregate function in a {@code compute} clause. */
+  /** Call to an aggregate function in a {@code compute} clause.
+   *
+   * <p>For example, in {@code sum of #id e as sumId},
+   * {@code aggregate} is "sum", {@code argument} is "#id e",
+   * and {@code id} is "sumId". */
   public static class Aggregate extends AstNode {
     public final Exp aggregate;
     public final Exp argument;

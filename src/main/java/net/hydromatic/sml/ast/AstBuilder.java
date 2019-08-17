@@ -373,7 +373,7 @@ public enum AstBuilder {
 
   public Ast.Exp map(Pos pos, Ast.Exp e1, Ast.Exp e2) {
     if (true) {
-      return apply(apply(id(pos, BuiltIn.MAP.mlName), e1), e2);
+      return apply(apply(id(pos, BuiltIn.LIST_MAP.mlName), e1), e2);
     }
     return new Ast.Map(pos, e1, e2);
   }
