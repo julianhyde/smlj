@@ -262,23 +262,13 @@ public class TypeResolver {
         filter2 = null;
       }
       v3 = unifier.variable();
-      if (from.groupExps != null) {
-        final Ast.Exp yieldExpOrDefault2 =
-            deduceType(env2, from.yieldExpOrDefault, v3);
-        final Ast.Exp yieldExp2 =
-            from.yieldExp == null ? null : yieldExpOrDefault2;
-        final Ast.From from2 = from.copy(from.sources, filter2, yieldExp2,
-            from.groupExps, from.aggregates);
-        return reg(from2, v, unifier.apply(LIST_TY_CON, v3));
-      } else {
-        final Ast.Exp yieldExpOrDefault2 =
-            deduceType(env2, from.yieldExpOrDefault, v3);
-        final Ast.Exp yieldExp2 =
-            from.yieldExp == null ? null : yieldExpOrDefault2;
-        final Ast.From from2 = from.copy(from.sources, filter2, yieldExp2,
-            from.groupExps, from.aggregates);
-        return reg(from2, v, unifier.apply(LIST_TY_CON, v3));
-      }
+      final Ast.Exp yieldExpOrDefault2 =
+          deduceType(env2, from.yieldExpOrDefault, v3);
+      final Ast.Exp yieldExp2 =
+          from.yieldExp == null ? null : yieldExpOrDefault2;
+      final Ast.From from2 = from.copy(from.sources, filter2, yieldExp2,
+          from.groupExps, from.aggregates);
+      return reg(from2, v, unifier.apply(LIST_TY_CON, v3));
 
     case ID:
       final Ast.Id id = (Ast.Id) node;

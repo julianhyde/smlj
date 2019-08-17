@@ -160,10 +160,15 @@ end;
 *)
 
 (*) Basic 'group'
+(*
 from e in emps
 group (#deptno e) as deptno
   compute sum of (#id e) as sumId,
           count of e as count;
+val it =
+  [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
+   {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}] : {deptno:int, id:int, name:string} list
+*)
 
 (*) 'group' with no aggregates
 from e in emps
@@ -174,22 +179,37 @@ from e in emps
 group (#deptno e) as deptno, (#id e) mod 2 as idMod2;
 
 (*) 'group' with 'where' and complex argument to 'sum'
+(*
 from e in emps
 where (#deptno e) < 30
 group (#deptno e) as deptno
   compute sum of (#id e) as sumId,
           min of (#id e) + (#deptno e) as minIdPlusDeptno;
+val it = [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"}] : {deptno:int, id:int, name:string} list
+*)
 
 (*) 'group' with join
+(*
 from e in emps, d in depts
 where (#deptno e) = (#deptno d)
 group (#deptno e) as deptno,
  (#name e) as dname
 compute sum of (#id e) as sumId;
+val it =
+  [{d={deptno=10,name="Sales"},e={deptno=10,id=100,name="Fred"}},
+   {d={deptno=20,name="HR"},e={deptno=20,id=101,name="Velma"}},
+   {d={deptno=30,name="Engineering"},e={deptno=30,id=102,name="Shaggy"}},
+   {d={deptno=30,name="Engineering"},e={deptno=30,id=103,name="Scooby"}}] : {d:{deptno:int, name:string}, e:{deptno:int, id:int, name:string}} list
+*)
 
 (*) empty 'group'
+(*
 from e in emps
 group compute sum of (#id e) as sumId;
+val it =
+  [{deptno=10,id=100,name="Fred"},{deptno=20,id=101,name="Velma"},
+   {deptno=30,id=102,name="Shaggy"},{deptno=30,id=103,name="Scooby"}] : {deptno:int, id:int, name:string} list
+*)
 
 (*) Should we allow 'yield' following 'group'? Here's a possible syntax.
 (*) We need to introduce a variable name, but "as g" syntax isn't great.

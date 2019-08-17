@@ -29,6 +29,7 @@ import net.hydromatic.sml.util.Pair;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.ObjIntConsumer;
@@ -1229,13 +1230,17 @@ public class Ast {
         groupExps.forEach(pair -> fields.put(pair.right.name, pair.left));
         final Literal aggResult = ast.intLiteral(BigDecimal.ZERO, pos); // FIXME
         aggregates.forEach(aggregate -> {
-          final Pat pat = ast.idPat(pos, sources.keySet().iterator().next().name);
+          final java.util.Map.Entry<Id, Exp> idSource =
+              sources.entrySet().iterator().next();
+          final Id id = idSource.getKey();
+          final Pat pat = ast.idPat(pos, id.name);
+          final Exp source = idSource.getValue();
           fields.put(aggregate.id.name,
               ast.apply(aggregate.aggregate,
                   ast.map(pos,
                       ast.fn(pos,
                           ast.match(pos, pat, aggregate.argument)),
-                      aggResult))); // TODO:
+                      source)));
         });
         this.yieldExpOrDefault = ast.record(pos, fields);
       } else if (yieldExp != null) {
