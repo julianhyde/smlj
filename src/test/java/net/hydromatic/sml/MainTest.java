@@ -444,6 +444,11 @@ public class MainTest {
         is("Error: fn expression required on rhs of val rec"));
   }
 
+  @Test public void testApply() {
+    assertType("List_map (fn x => String_size x) [\"abc\", \"de\"]",
+        is("int list"));
+  }
+
   @Test public void testApplyIsMonomorphic() {
     // cannot be typed, since the parameter f is in a monomorphic position
     assertTypeThrows("fn f => (f true, f 0)",

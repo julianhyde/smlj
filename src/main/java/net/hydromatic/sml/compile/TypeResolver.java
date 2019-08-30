@@ -31,6 +31,7 @@ import net.hydromatic.sml.type.ApplyType;
 import net.hydromatic.sml.type.DataType;
 import net.hydromatic.sml.type.DummyType;
 import net.hydromatic.sml.type.FnType;
+import net.hydromatic.sml.type.ForallType;
 import net.hydromatic.sml.type.ListType;
 import net.hydromatic.sml.type.NamedType;
 import net.hydromatic.sml.type.PrimitiveType;
@@ -850,6 +851,9 @@ public class TypeResolver {
       final ListType listType = (ListType) type;
       return unifier.apply(LIST_TY_CON,
           toTerm(listType.elementType));
+    case FORALL_TYPE:
+      final ForallType forallType = (ForallType) type;
+      return toTerm(forallType.type);
     default:
       throw new AssertionError("unknown type: " + type.description());
     }

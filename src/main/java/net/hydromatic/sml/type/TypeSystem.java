@@ -84,11 +84,11 @@ public class TypeSystem {
   }
 
   /** Creates a function type. */
-  public Type fnType(Type paramType, Type resultType) {
+  public FnType fnType(Type paramType, Type resultType) {
     final String description =
         unparseList(new StringBuilder(), Op.FUNCTION_TYPE, 0, 0,
             Arrays.asList(paramType, resultType)).toString();
-    return typeByName.computeIfAbsent(description,
+    return (FnType) typeByName.computeIfAbsent(description,
         d -> new FnType(d, paramType, resultType));
   }
 
@@ -106,12 +106,12 @@ public class TypeSystem {
   }
 
   /** Creates a list type. */
-  public Type listType(Type elementType) {
+  public ListType listType(Type elementType) {
     final String description =
         unparse(new StringBuilder(), elementType, 0, Op.LIST.right)
             .append(" list")
             .toString();
-    return typeByName.computeIfAbsent(description,
+    return (ListType) typeByName.computeIfAbsent(description,
         d -> new ListType(d, elementType));
   }
 
@@ -163,6 +163,45 @@ public class TypeSystem {
       }
     }
     return true;
+  }
+
+  /** Creates a "forall" type. */
+  public Type forallType(int typeCount, Function<ForallHelper, Type> builder) {
+    final ImmutableList.Builder<TypeVar> typeVars = ImmutableList.builder();
+    for (int i = 0; i < typeCount; i++) {
+      typeVars.add(typeVariable(i));
+    }
+    final ImmutableList<TypeVar> typeVarList = typeVars.build();
+    final ForallHelper helper = new ForallHelper() {
+      public TypeVar get(int i) {
+        return typeVarList.get(i);
+      }
+
+      public ListType list(int i) {
+        return listType(get(i));
+      }
+
+      public FnType predicate(int i) {
+        return fnType(get(i), PrimitiveType.BOOL);
+      }
+    };
+    final Type type = builder.apply(helper);
+    return forallType(typeVarList, type);
+  }
+
+  /** Creates a "forall" type. */
+  public Type forallType(Iterable<TypeVar> typeVars, Type type) {
+    final StringBuilder b = new StringBuilder();
+    b.append("forall");
+    for (TypeVar typeVar : typeVars) {
+      b.append(' ').append(typeVar.description());
+    }
+    b.append(". ");
+    unparse(b, type, 0, 0);
+
+    final String description = b.toString();
+    return typeByName.computeIfAbsent(description,
+        d -> new ForallType(d, ImmutableList.copyOf(typeVars), type));
   }
 
   private static StringBuilder unparseList(StringBuilder builder, Op op,
@@ -253,6 +292,14 @@ public class TypeSystem {
     public void delete() {
       this.typeSystem.typeByName.remove(name);
     }
+  }
+
+  /** Provides access to type variables from within a call to
+   * {@link TypeSystem#forallType(int, Function)}. */
+  public interface ForallHelper {
+    TypeVar get(int i);
+    ListType list(int i);
+    FnType predicate(int i);
   }
 }
 
