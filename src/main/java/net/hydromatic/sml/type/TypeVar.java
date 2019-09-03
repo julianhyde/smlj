@@ -46,6 +46,11 @@ public class TypeVar implements Type {
     this.ordinal = ordinal;
   }
 
+  /** Returns a string for debugging; see also {@link #description()}. */
+  @Override public String toString() {
+    return "'#" + ordinal;
+  }
+
   /** Generates a name for a type variable.
    *
    * <p>0 &rarr; 'a, 1 &rarr; 'b, 26 &rarr; 'z, 27 &rarr; 'ba, 28 &rarr; 'bb,

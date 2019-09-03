@@ -445,6 +445,10 @@ public class MainTest {
   }
 
   @Test public void testApply() {
+    assertType("List_hd [\"abc\"]", is("string"));
+  }
+
+  @Test public void testApply2() {
     assertType("List_map (fn x => String_size x) [\"abc\", \"de\"]",
         is("int list"));
   }

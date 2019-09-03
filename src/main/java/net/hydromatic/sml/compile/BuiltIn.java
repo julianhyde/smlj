@@ -465,6 +465,15 @@ public enum BuiltIn {
   public static void forEachType(TypeSystem typeSystem,
       BiConsumer<String, Type> consumer) {
     for (BuiltIn builtIn : values()) {
+      switch (builtIn) { // TODO remove
+      case LIST_HD:
+      case LIST_NIL:
+//      case TRUE:
+//      case FALSE:
+        break;
+      default:
+        continue;
+      }
       final Type type = builtIn.typeFunction.apply(typeSystem);
       consumer.accept(builtIn.mlName, type);
       if (builtIn.alias != null) {
