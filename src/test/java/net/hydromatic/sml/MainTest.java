@@ -725,10 +725,9 @@ public class MainTest {
     assertEval(ml, is(120));
   }
 
-  @Ignore("requires generics")
   @Test public void testEvalFnTupleGeneric() {
     assertEval("(fn (x, y) => x) (2, 3)", is(2));
-    assertEval("(fn (x, y) => y) 3", is(3));
+    assertEval("(fn (x, y) => y) (2, 3)", is(3));
   }
 
   @Test public void testRecord() {
@@ -816,9 +815,6 @@ public class MainTest {
   @Test public void testList() {
     assertType("[1]", is("int list"));
     assertType("[[1]]", is("int list list"));
-  }
-
-  @Test public void testTodo() {
     assertType("[(1, true), (2, false)]", is("(int * bool) list"));
     assertType("1 :: [2]", is("int list"));
     assertType("1 :: [2, 3]", is("int list"));
@@ -826,11 +822,11 @@ public class MainTest {
     assertType("1 :: []", is("int list"));
     assertType("1 :: 2 :: []", is("int list"));
     assertEval("1 :: 2 :: []", is(Arrays.asList(1, 2)));
+    assertType("fn [] => 0", is("'a list -> int"));
   }
 
-  @Ignore("need patterns as arguments and generics")
+  @Ignore("need type annotations")
   @Test public void testList2() {
-    assertType("fn [] => 0", is("'a list -> int"));
     assertType("fn x: 'b list => 0", is("'a list -> int"));
   }
 

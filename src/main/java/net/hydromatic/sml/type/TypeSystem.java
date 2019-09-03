@@ -250,7 +250,9 @@ public class TypeSystem {
   }
 
   public TypeVar typeVariable(int ordinal) {
-    return new TypeVar(ordinal);
+    final String description = "'#" + ordinal;
+    return (TypeVar) typeByName.computeIfAbsent(description,
+        d -> new TypeVar(ordinal));
   }
 
   /** Placeholder for a type that is being recursively defined.
