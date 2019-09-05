@@ -594,15 +594,15 @@ public class Ast {
       this.name = Objects.requireNonNull(name);
     }
 
-    @Override public int hashCode() {
-      return name.hashCode();
-    }
-
-    @Override public boolean equals(Object o) {
-      return o == this
-          || o instanceof Id
-          && this.name.equals(((Id) o).name);
-    }
+//    @Override public int hashCode() {
+//      return name.hashCode();
+//    }
+//
+//    @Override public boolean equals(Object o) {
+//      return o == this
+//          || o instanceof Id
+//          && this.name.equals(((Id) o).name);
+//    }
 
     public Id accept(Shuttle shuttle) {
       return shuttle.visit(this);

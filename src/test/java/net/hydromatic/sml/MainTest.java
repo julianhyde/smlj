@@ -1171,9 +1171,9 @@ public class MainTest {
         + "end";
     assertParseDecl("val x = " + ml,
         isAst(Ast.ValDecl.class, "val x = " + expected));
-    abandon("type derivation not done");
     assertType(ml, is("{deptno:int, sumId:int} list"));
-    assertEval(ml, (Matcher) equalsUnordered(list(10), list(20)));
+    //noinspection unchecked
+    assertEval(ml, (Matcher) equalsUnordered(list(10, 2), list(20, 1)));
   }
 
   @Test public void testError() {

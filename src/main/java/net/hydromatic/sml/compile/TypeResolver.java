@@ -20,7 +20,6 @@ package net.hydromatic.sml.compile;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Lists;
 
@@ -49,7 +48,9 @@ import net.hydromatic.sml.util.Unifier;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,7 +70,7 @@ public class TypeResolver {
   final TypeSystem typeSystem;
   final Unifier unifier = new MartelliUnifier();
   final List<TermVariable> terms = new ArrayList<>();
-  final Map<AstNode, Unifier.Term> map = new HashMap<>();
+  final Map<AstNode, Unifier.Term> map = new IdentityHashMap<>();
   final Map<Unifier.Variable, Unifier.Action> actionMap = new HashMap<>();
   final Map<String, TypeVar> tyVarMap = new HashMap<>();
 
@@ -995,10 +996,13 @@ public class TypeResolver {
     }
 
     @Override public Unifier.Term get(String name) {
-      if (name.equals(definedName)) {
-        return typeTerm;
-      } else {
-        return parent.get(name);
+      for (BindTypeEnv e = this;; e = (BindTypeEnv) e.parent) {
+        if (e.definedName.equals(name)) {
+          return e.typeTerm;
+        }
+        if (!(e.parent instanceof BindTypeEnv)) {
+          return e.parent.get(name);
+        }
       }
     }
 
@@ -1033,7 +1037,7 @@ public class TypeResolver {
     TypeMap(TypeSystem typeSystem, Map<AstNode, Unifier.Term> nodeTypeTerms,
         Unifier.Substitution substitution) {
       this.typeSystem = Objects.requireNonNull(typeSystem);
-      this.nodeTypeTerms = ImmutableMap.copyOf(nodeTypeTerms);
+      this.nodeTypeTerms = Collections.unmodifiableMap(nodeTypeTerms);
       this.substitution = Objects.requireNonNull(substitution.resolve());
     }
 
