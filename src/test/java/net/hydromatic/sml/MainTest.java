@@ -42,6 +42,7 @@ import org.hamcrest.CustomTypeSafeMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
 import org.hamcrest.TypeSafeMatcher;
+import org.junit.Assume;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -512,6 +513,26 @@ public class MainTest {
         is("bool -> 'a * 'a -> 'a"));
   }
 
+  @Ignore("until type-inference bug is fixed")
+  @Test public void testExponentialType() {
+    Assume.assumeTrue(false); // TODO
+    final String ml = "let\n"
+        + "  fun f x = (x, x, x)\n"
+        + "in\n"
+        + "   f (f (f (f (f 0))))\n"
+        + "end";
+    assertType(ml, is("xx"));
+  }
+
+  @Ignore("until type-inference bug is fixed")
+  @Test public void testExponentialType2() {
+    final String ml = "fun f x y z = (x, y, z)\n"
+        + "val p1 = (f, f, f)\n"
+        + "val p2 = (p1, p1, p1)\n"
+        + "val p3 = (p2, p2, p2)\n";
+    assertType(ml, is("xx"));
+  }
+
   @Test public void testEval() {
     // literals
     assertEval("1", is(1));
@@ -704,6 +725,18 @@ public class MainTest {
             && messageMatcher.matches(item.getMessage());
       }
     };
+  }
+
+  /** Tests that in a {@code let} clause, we can see previously defined
+   * variables. */
+  @Test public void testLet2() {
+    final String ml = "let\n"
+        + "  val x = 1\n"
+        + "  val y = x + 2\n"
+        + "in\n"
+        + "  y + x + 3\n"
+        + "end";
+    assertEval(ml, is(7));
   }
 
   @Test public void testClosure() {
