@@ -20,6 +20,7 @@ package net.hydromatic.sml.compile;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Lists;
 
@@ -48,9 +49,7 @@ import net.hydromatic.sml.util.Unifier;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -59,6 +58,7 @@ import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static net.hydromatic.sml.ast.AstBuilder.ast;
@@ -70,7 +70,7 @@ public class TypeResolver {
   final TypeSystem typeSystem;
   final Unifier unifier = new MartelliUnifier();
   final List<TermVariable> terms = new ArrayList<>();
-  final Map<AstNode, Unifier.Term> map = new IdentityHashMap<>();
+  final Map<AstNode, Unifier.Term> map = new HashMap<>();
   final Map<Unifier.Variable, Unifier.Action> actionMap = new HashMap<>();
   final Map<String, TypeVar> tyVarMap = new HashMap<>();
 
@@ -92,7 +92,7 @@ public class TypeResolver {
 
   private Resolved deduceType_(Environment env, Ast.Decl decl) {
     final TypeEnvHolder typeEnvs = new TypeEnvHolder(EmptyTypeEnv.INSTANCE);
-    BuiltIn.forEachType(typeSystem, typeEnvs::bind);
+    BuiltIn.forEachType(typeEnvs::bind);
     env.forEachType(typeEnvs::bind);
     final TypeEnv typeEnv = typeEnvs.typeEnv;
     final Map<Ast.IdPat, Unifier.Term> termMap = new LinkedHashMap<>();
@@ -273,7 +273,7 @@ public class TypeResolver {
 
     case ID:
       final Ast.Id id = (Ast.Id) node;
-      final Unifier.Term term = env.get(id.name);
+      final Unifier.Term term = env.get(typeSystem, id.name);
       return reg(id, v, term);
 
     case FN:
@@ -539,7 +539,7 @@ public class TypeResolver {
    *     (a, 0) => a
    *   | (a, b) = gcd b (a mod b)}.
    */
-  private static Ast.ValDecl toValDecl(TypeEnv env, Ast.FunDecl funDecl) {
+  private Ast.ValDecl toValDecl(TypeEnv env, Ast.FunDecl funDecl) {
     final List<Ast.ValBind> valBindList = new ArrayList<>();
     for (Ast.FunBind funBind : funDecl.funBinds) {
       valBindList.add(toValBind(env, funBind));
@@ -547,7 +547,7 @@ public class TypeResolver {
     return ast.valDecl(funDecl.pos, valBindList);
   }
 
-  private static Ast.ValBind toValBind(TypeEnv env, Ast.FunBind funBind) {
+  private Ast.ValBind toValBind(TypeEnv env, Ast.FunBind funBind) {
     final List<Ast.Pat> vars;
     Ast.Exp e;
     if (funBind.matchList.size() == 1) {
@@ -588,7 +588,7 @@ public class TypeResolver {
   }
 
   /** Converts a list of patterns to a singleton pattern or tuple pattern. */
-  private static Ast.Pat patTuple(TypeEnv env, List<Ast.Pat> patList) {
+  private Ast.Pat patTuple(TypeEnv env, List<Ast.Pat> patList) {
     final List<Ast.Pat> list2 = new ArrayList<>();
     for (int i = 0; i < patList.size(); i++) {
       final Ast.Pat pat = patList.get(i);
@@ -596,7 +596,7 @@ public class TypeResolver {
       case ID_PAT:
         final Ast.IdPat idPat = (Ast.IdPat) pat;
         if (env.has(idPat.name)) {
-          final Unifier.Term term = env.get(idPat.name);
+          final Unifier.Term term = env.get(typeSystem, idPat.name);
           if (term instanceof Unifier.Sequence
               && ((Unifier.Sequence) term).operator.equals(FN_TY_CON)) {
             list2.add(
@@ -875,7 +875,7 @@ public class TypeResolver {
   enum EmptyTypeEnv implements TypeEnv {
     INSTANCE;
 
-    @Override public Unifier.Term get(String name) {
+    @Override public Unifier.Term get(TypeSystem typeSystem, String name) {
       throw new CompileException("unbound variable or constructor: " + name);
     }
 
@@ -883,7 +883,8 @@ public class TypeResolver {
       return false;
     }
 
-    @Override public TypeEnv bind(String name, Unifier.Term typeTerm) {
+    @Override public TypeEnv bind(String name,
+        Function<TypeSystem, Type> typeTerm) {
       return new BindTypeEnv(name, typeTerm, this);
     }
 
@@ -894,9 +895,10 @@ public class TypeResolver {
 
   /** Type environment. */
   interface TypeEnv {
-    Unifier.Term get(String name);
+    Unifier.Term get(TypeSystem typeSystem, String name);
     boolean has(String name);
     TypeEnv bind(String name, Unifier.Term typeTerm);
+    TypeEnv bind(String name, Function<TypeSystem, Type> typeTerm);
   }
 
   /** Pair consisting of a term and a variable. */
@@ -995,13 +997,13 @@ public class TypeResolver {
       this.parent = Objects.requireNonNull(parent);
     }
 
-    @Override public Unifier.Term get(String name) {
+    @Override public Unifier.Term get(TypeSystem typeSystem, String name) {
       for (BindTypeEnv e = this;; e = (BindTypeEnv) e.parent) {
         if (e.definedName.equals(name)) {
           return e.typeTerm;
         }
         if (!(e.parent instanceof BindTypeEnv)) {
-          return e.parent.get(name);
+          return e.parent.get(typeSystem, name);
         }
       }
     }
@@ -1010,7 +1012,8 @@ public class TypeResolver {
       return name.equals(definedName) || parent.has(name);
     }
 
-    @Override public TypeEnv bind(String name, Unifier.Term typeTerm) {
+    @Override public TypeEnv bind(String name,
+        Function<TypeSystem, Type> typeTerm) {
       return new BindTypeEnv(name, typeTerm, this);
     }
 
@@ -1037,7 +1040,7 @@ public class TypeResolver {
     TypeMap(TypeSystem typeSystem, Map<AstNode, Unifier.Term> nodeTypeTerms,
         Unifier.Substitution substitution) {
       this.typeSystem = Objects.requireNonNull(typeSystem);
-      this.nodeTypeTerms = Collections.unmodifiableMap(nodeTypeTerms);
+      this.nodeTypeTerms = ImmutableMap.copyOf(nodeTypeTerms);
       this.substitution = Objects.requireNonNull(substitution.resolve());
     }
 
@@ -1061,7 +1064,7 @@ public class TypeResolver {
   }
 
   /** Contains a {@link TypeEnv} and adds to it by calling
-   * {@link TypeEnv#bind(String, Unifier.Term)}. */
+   * {@link TypeEnv#bind(String, Function)}. */
   private class TypeEnvHolder {
     private TypeEnv typeEnv;
 
@@ -1069,8 +1072,8 @@ public class TypeResolver {
       this.typeEnv = Objects.requireNonNull(typeEnv);
     }
 
-    TypeEnvHolder bind(String name, Type type) {
-      typeEnv = typeEnv.bind(name, toTerm(type, Subst.EMPTY));
+    TypeEnvHolder bind(String name, Function<TypeSystem, Type> typeFunction) {
+      typeEnv = typeEnv.bind(name, typeFunction);
       return this;
     }
   }

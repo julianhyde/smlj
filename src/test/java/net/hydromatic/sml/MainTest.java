@@ -42,7 +42,6 @@ import org.hamcrest.CustomTypeSafeMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
 import org.hamcrest.TypeSafeMatcher;
-import org.junit.Assume;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -513,9 +512,17 @@ public class MainTest {
         is("bool -> 'a * 'a -> 'a"));
   }
 
+  @Test public void testExponentialType0() {
+    final String ml = "let\n"
+        + "  fun f x = (x, x)\n"
+        + "in\n"
+        + "  f (f 0)\n"
+        + "end";
+    assertType(ml, is("xx"));
+  }
+
   @Ignore("until type-inference bug is fixed")
   @Test public void testExponentialType() {
-    Assume.assumeTrue(false); // TODO
     final String ml = "let\n"
         + "  fun f x = (x, x, x)\n"
         + "in\n"
