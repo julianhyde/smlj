@@ -58,6 +58,7 @@ import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -92,8 +93,8 @@ public class TypeResolver {
 
   private Resolved deduceType_(Environment env, Ast.Decl decl) {
     final TypeEnvHolder typeEnvs = new TypeEnvHolder(EmptyTypeEnv.INSTANCE);
-    BuiltIn.forEachType(typeEnvs::bind);
-    env.forEachType(typeEnvs::bind);
+    BuiltIn.forEachType(typeSystem, typeEnvs);
+    env.forEachType(typeEnvs);
     final TypeEnv typeEnv = typeEnvs.typeEnv;
     final Map<Ast.IdPat, Unifier.Term> termMap = new LinkedHashMap<>();
     final Ast.Decl node2 = deduceDeclType(typeEnv, decl, termMap);
@@ -884,8 +885,8 @@ public class TypeResolver {
     }
 
     @Override public TypeEnv bind(String name,
-        Function<TypeSystem, Type> typeTerm) {
-      return new BindTypeEnv(name, typeTerm, this);
+        Function<TypeSystem, Unifier.Term> termFactory) {
+      return new BindTypeEnv(name, termFactory, this);
     }
 
     @Override public String toString() {
@@ -897,8 +898,19 @@ public class TypeResolver {
   interface TypeEnv {
     Unifier.Term get(TypeSystem typeSystem, String name);
     boolean has(String name);
-    TypeEnv bind(String name, Unifier.Term typeTerm);
-    TypeEnv bind(String name, Function<TypeSystem, Type> typeTerm);
+    TypeEnv bind(String name, Function<TypeSystem, Unifier.Term> termFactory);
+
+    default TypeEnv bind(String name, Unifier.Term term) {
+      return bind(name, new Function<TypeSystem, Unifier.Term>() {
+        @Override public Unifier.Term apply(TypeSystem typeSystem) {
+          return term;
+        }
+
+        @Override public String toString() {
+          return term.toString();
+        }
+      });
+    }
   }
 
   /** Pair consisting of a term and a variable. */
@@ -988,19 +1000,20 @@ public class TypeResolver {
    * binding. */
   private static class BindTypeEnv implements TypeEnv {
     private final String definedName;
-    private final Unifier.Term typeTerm;
+    private final Function<TypeSystem, Unifier.Term> termFactory;
     private final TypeEnv parent;
 
-    BindTypeEnv(String definedName, Unifier.Term typeTerm, TypeEnv parent) {
+    BindTypeEnv(String definedName,
+        Function<TypeSystem, Unifier.Term> termFactory, TypeEnv parent) {
       this.definedName = Objects.requireNonNull(definedName);
-      this.typeTerm = Objects.requireNonNull(typeTerm);
+      this.termFactory = Objects.requireNonNull(termFactory);
       this.parent = Objects.requireNonNull(parent);
     }
 
     @Override public Unifier.Term get(TypeSystem typeSystem, String name) {
       for (BindTypeEnv e = this;; e = (BindTypeEnv) e.parent) {
         if (e.definedName.equals(name)) {
-          return e.typeTerm;
+          return e.termFactory.apply(typeSystem);
         }
         if (!(e.parent instanceof BindTypeEnv)) {
           return e.parent.get(typeSystem, name);
@@ -1013,14 +1026,14 @@ public class TypeResolver {
     }
 
     @Override public TypeEnv bind(String name,
-        Function<TypeSystem, Type> typeTerm) {
-      return new BindTypeEnv(name, typeTerm, this);
+        Function<TypeSystem, Unifier.Term> termFactory) {
+      return new BindTypeEnv(name, termFactory, this);
     }
 
     @Override public String toString() {
-      final Map<String, Unifier.Term> map = new LinkedHashMap<>();
+      final Map<String, String> map = new LinkedHashMap<>();
       for (BindTypeEnv e = this;;) {
-        map.putIfAbsent(e.definedName, e.typeTerm);
+        map.putIfAbsent(e.definedName, e.termFactory.toString());
         if (e.parent instanceof BindTypeEnv) {
           e = (BindTypeEnv) e.parent;
         } else {
@@ -1065,16 +1078,23 @@ public class TypeResolver {
 
   /** Contains a {@link TypeEnv} and adds to it by calling
    * {@link TypeEnv#bind(String, Function)}. */
-  private class TypeEnvHolder {
+  private class TypeEnvHolder implements BiConsumer<String, Type> {
     private TypeEnv typeEnv;
 
     TypeEnvHolder(TypeEnv typeEnv) {
       this.typeEnv = Objects.requireNonNull(typeEnv);
     }
 
-    TypeEnvHolder bind(String name, Function<TypeSystem, Type> typeFunction) {
-      typeEnv = typeEnv.bind(name, typeFunction);
-      return this;
+    @Override public void accept(String name, Type type) {
+      typeEnv = typeEnv.bind(name, new Function<TypeSystem, Unifier.Term>() {
+        @Override public Unifier.Term apply(TypeSystem typeSystem_) {
+          return TypeResolver.this.toTerm(type, Subst.EMPTY);
+        }
+
+        @Override public String toString() {
+          return type.description();
+        }
+      });
     }
   }
 
@@ -1150,7 +1170,6 @@ public class TypeResolver {
         }
       }
     }
-
   }
 }
 

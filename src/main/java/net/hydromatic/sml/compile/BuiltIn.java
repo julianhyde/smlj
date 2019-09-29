@@ -492,12 +492,13 @@ public enum BuiltIn {
   }
 
   /** Calls a consumer once per value. */
-  public static void forEachType(
-      BiConsumer<String, Function<TypeSystem, Type>> consumer) {
+  public static void forEachType(TypeSystem typeSystem,
+      BiConsumer<String, Type> consumer) {
     for (BuiltIn builtIn : values()) {
-      consumer.accept(builtIn.mlName, builtIn.typeFunction);
+      final Type type = builtIn.typeFunction.apply(typeSystem);
+      consumer.accept(builtIn.mlName, type);
       if (builtIn.alias != null) {
-        consumer.accept(builtIn.alias, builtIn.typeFunction);
+        consumer.accept(builtIn.alias, type);
       }
     }
   }

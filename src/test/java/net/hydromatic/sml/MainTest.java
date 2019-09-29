@@ -482,11 +482,21 @@ public class MainTest {
             is("Cannot deduce type: conflict: int vs bool")));
   }
 
-  @Ignore // enable this test when we have polymorphic type resolution
+//  @Ignore // enable this test when we have polymorphic type resolution
   @Test public void testLetIsPolymorphic() {
     // f has been introduced in a let-expression and is therefore treated as
     // polymorphic.
     assertType("let val f = fn x => x in (f true, f 0) end", is("bool * int"));
+  }
+
+  @Test public void testHdIsPolymorphic() {
+    assertType("(List_hd [1, 2], List_hd [false, true])", is("int * bool"));
+    assertType("let\n"
+            + "  val h = List_hd\n"
+            + "in\n"
+            + "   (h [1, 2], h [false, true])\n"
+            + "end",
+        is("int * bool"));
   }
 
   @Test public void testTypeVariable() {
