@@ -101,8 +101,12 @@ public class TypeResolver {
     final List<Unifier.TermTerm> termPairs = new ArrayList<>();
     terms.forEach(tv ->
         termPairs.add(new Unifier.TermTerm(tv.term, tv.variable)));
+    System.out.println(terms.stream().map(Object::toString).collect(Collectors.joining("\n")));
     final Unifier.Result result =
         unifier.unify(termPairs, actionMap);
+    System.out.println();
+    System.out.println(result);
+    System.out.println();
     if (result instanceof Unifier.Substitution) {
       return Resolved.of(decl, node2,
           new TypeMap(typeSystem, map, (Unifier.Substitution) result));
