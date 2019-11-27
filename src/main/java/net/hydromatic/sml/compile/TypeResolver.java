@@ -804,6 +804,7 @@ public class TypeResolver {
   }
 
   private void equiv(Unifier.Term term, Unifier.Variable atom) {
+    System.out.println(terms);
     terms.add(new TermVariable(term, atom));
   }
 
