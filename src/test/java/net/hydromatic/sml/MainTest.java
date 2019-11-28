@@ -23,6 +23,7 @@ import com.google.common.collect.Sets;
 
 import net.hydromatic.sml.ast.Ast;
 import net.hydromatic.sml.ast.AstNode;
+import net.hydromatic.sml.foreign.ForeignValues;
 import net.hydromatic.sml.type.TypeVar;
 
 import org.hamcrest.CustomTypeSafeMatcher;
@@ -43,6 +44,7 @@ import java.util.List;
 import java.util.Set;
 
 import static net.hydromatic.sml.Ml.assertError;
+import static net.hydromatic.sml.Ml.ml;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
@@ -53,9 +55,6 @@ import static org.junit.Assert.assertThat;
  * Kick the tires.
  */
 public class MainTest {
-  private Ml ml(String ml) {
-    return new Ml(ml);
-  }
 
   /** Matches a literal by value. */
   private static Matcher<Ast.Literal> isLiteral(Comparable comparable) {
@@ -1130,6 +1129,19 @@ public class MainTest {
     //noinspection unchecked
     ml(ml).assertType("{deptno:int, sumId:int} list")
         .assertEval((Matcher) equalsUnordered(list(10, 2), list(20, 1)));
+  }
+
+  /** Tests a program that uses an external collection from the "scott" JDBC
+   * database. */
+  @Test public void testScott() {
+    final String ml = "let\n"
+        + "  val emps = #emp scott\n"
+        + "in\n"
+        + "  from e in emps yield #deptno e\n"
+        + "end\n";
+    ml(ml)
+        .withBinding("scott", ForeignValues.scott())
+        .assertType("xx");
   }
 
   @Test public void testError() {

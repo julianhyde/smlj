@@ -18,6 +18,8 @@
  */
 package net.hydromatic.sml;
 
+import com.google.common.collect.ImmutableMap;
+
 import net.hydromatic.sml.ast.Ast;
 import net.hydromatic.sml.ast.AstNode;
 import net.hydromatic.sml.compile.CompiledStatement;
@@ -29,6 +31,7 @@ import net.hydromatic.sml.compile.TypeResolver;
 import net.hydromatic.sml.eval.Code;
 import net.hydromatic.sml.eval.Codes;
 import net.hydromatic.sml.eval.EvalEnv;
+import net.hydromatic.sml.foreign.ForeignValue;
 import net.hydromatic.sml.parse.ParseException;
 import net.hydromatic.sml.parse.SmlParserImpl;
 import net.hydromatic.sml.type.TypeSystem;
@@ -37,6 +40,7 @@ import org.hamcrest.CoreMatchers;
 import org.hamcrest.Matcher;
 
 import java.io.StringReader;
+import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -47,9 +51,11 @@ import static org.junit.Assert.fail;
 /** Fluent test helper. */
 class Ml {
   private final String ml;
+  private final Map<String, ForeignValue> valueMap;
 
-  Ml(String ml) {
+  Ml(String ml, Map<String, ForeignValue> valueMap) {
     this.ml = ml;
+    this.valueMap = ImmutableMap.copyOf(valueMap);
   }
 
   /** Runs a task and checks that it throws an exception.
@@ -65,6 +71,11 @@ class Ml {
     } catch (Throwable e) {
       assertThat(e, matcher);
     }
+  }
+
+  /** Creates an {@code Ml}. */
+  static Ml ml(String ml) {
+    return new Ml(ml, ImmutableMap.of());
   }
 
   Ml withParser(Consumer<SmlParserImpl> action) {
@@ -133,7 +144,7 @@ class Ml {
       try {
         final Ast.Exp expression = parser.expression();
         final TypeResolver.Resolved resolved =
-            Compiles.validateExpression(expression);
+            Compiles.validateExpression(valueMap, expression);
         final Ast.Exp resolvedExp =
             Compiles.toExp((Ast.ValDecl) resolved.node);
         action.accept(resolvedExp, resolved.typeMap);
@@ -212,6 +223,15 @@ class Ml {
 
   Ml assertError(String expected) {
     return assertError(is(expected));
+  }
+
+  Ml withBinding(String name, ForeignValue schema) {
+    return new Ml(ml, plus(valueMap, name, schema));
+  }
+
+  /** Returns a map plus one (key, value) entry. */
+  private static <K, V> Map<K, V> plus(Map<K, V> map, K k, V v) {
+    return ImmutableMap.<K, V>builder().putAll(map).put(k, v).build();
   }
 }
 
