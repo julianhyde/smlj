@@ -144,7 +144,7 @@ class Ml {
       try {
         final Ast.Exp expression = parser.expression();
         final TypeResolver.Resolved resolved =
-            Compiles.validateExpression(valueMap, expression);
+            Compiles.validateExpression(expression, valueMap);
         final Ast.Exp resolvedExp =
             Compiles.toExp((Ast.ValDecl) resolved.node);
         action.accept(resolvedExp, resolved.typeMap);
@@ -189,7 +189,7 @@ class Ml {
     try {
       final Ast.Exp e = new SmlParserImpl(new StringReader(ml)).expression();
       final TypeSystem typeSystem = new TypeSystem();
-      final Environment env = Environments.empty();
+      final Environment env = Compiles.createEnvironment(typeSystem, valueMap);
       final Ast.ValDecl valDecl = Compiles.toValDecl(e);
       final TypeResolver.Resolved resolved =
           TypeResolver.deduceType(env, valDecl, typeSystem);
@@ -197,7 +197,7 @@ class Ml {
       final Code code =
           new Compiler(resolved.typeMap)
               .compile(env, Compiles.toExp(valDecl2));
-      final EvalEnv evalEnv = Codes.emptyEnv();
+      final EvalEnv evalEnv = Codes.emptyEnvWith(env);
       final Object value = code.eval(evalEnv);
       assertThat(value, matcher);
       return this;

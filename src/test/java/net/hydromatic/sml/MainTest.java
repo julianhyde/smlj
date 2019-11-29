@@ -1141,7 +1141,8 @@ public class MainTest {
         + "end\n";
     ml(ml)
         .withBinding("scott", ForeignValues.scott())
-        .assertType("xx");
+        .assertType("int list")
+        .assertEval(is(Arrays.asList(1, 0)));
   }
 
   @Test public void testError() {

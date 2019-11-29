@@ -39,9 +39,11 @@ public abstract class ForeignValues {
         final DataSource dataSource =
             JdbcSchema.dataSource(ScottHsqldb.URI, null, ScottHsqldb.USER,
                 ScottHsqldb.PASSWORD);
-        return ROOT_SCHEMA.get().add("scott",
-            JdbcSchema.create(ROOT_SCHEMA.get(), "scott",
-                dataSource, null, "SCOTT"));
+        final String name = "scott";
+        final SchemaPlus rootSchema = ROOT_SCHEMA.get();
+        final JdbcSchema schema =
+            JdbcSchema.create(rootSchema, name, dataSource, null, "SCOTT");
+        return rootSchema.add(name, schema);
       });
 
   private ForeignValues() {}

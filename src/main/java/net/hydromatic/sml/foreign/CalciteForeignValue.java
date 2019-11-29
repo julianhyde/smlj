@@ -53,10 +53,9 @@ class CalciteForeignValue implements ForeignValue {
   public Type type(TypeSystem typeSystem) {
     final ImmutableSortedMap.Builder<String, Type> fields =
         ImmutableSortedMap.orderedBy(RecordType.ORDERING);
-    schema.getTableNames().forEach(tableName -> {
-      fields.put(convert(tableName),
-          toType(schema.getTable(tableName), typeSystem));
-    });
+    schema.getTableNames().forEach(tableName ->
+        fields.put(convert(tableName),
+            toType(schema.getTable(tableName), typeSystem)));
     return typeSystem.recordType(fields.build());
   }
 
@@ -66,7 +65,7 @@ class CalciteForeignValue implements ForeignValue {
     table.getRowType(typeFactory).getFieldList().forEach(field ->
         fields.put(convert(field.getName()),
             toType(field.getType(), typeSystem)));
-    return typeSystem.recordType(fields.build());
+    return typeSystem.listType(typeSystem.recordType(fields.build()));
   }
 
   private String convert(String name) {

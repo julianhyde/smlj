@@ -40,12 +40,18 @@ public abstract class Compiles {
    * expression to a form that can more easily be compiled.
    *
    * <p>Used for testing. */
-  public static TypeResolver.Resolved validateExpression(Map<String,
-      ForeignValue> valueMap, Ast.Exp exp) {
+  public static TypeResolver.Resolved validateExpression(Ast.Exp exp,
+      Map<String, ForeignValue> valueMap) {
     final TypeSystem typeSystem = new TypeSystem();
-    final Environment env = Environments.empty()
-        .bindAll(bindings(typeSystem, valueMap));
+    final Environment env = createEnvironment(typeSystem, valueMap);
     return TypeResolver.deduceType(env, toValDecl(exp), typeSystem);
+  }
+
+  /** Creates an environment containing the given foreign values. */
+  public static Environment createEnvironment(TypeSystem typeSystem,
+      Map<String, ForeignValue> valueMap) {
+    return Environments.empty()
+          .bindAll(bindings(typeSystem, valueMap));
   }
 
   private static Iterable<Binding> bindings(TypeSystem typeSystem,
