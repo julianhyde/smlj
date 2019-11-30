@@ -58,7 +58,7 @@ public abstract class Compiles {
       Map<String, ForeignValue> map) {
     final List<Binding> bindings = new ArrayList<>();
     map.forEach((name, value) ->
-        bindings.add(new Binding(name, value.type(typeSystem), value)));
+        bindings.add(new Binding(name, value.type(typeSystem), value.value())));
     return bindings;
   }
 

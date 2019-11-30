@@ -1142,7 +1142,11 @@ public class MainTest {
     ml(ml)
         .withBinding("scott", ForeignValues.scott())
         .assertType("int list")
-        .assertEval(is(Arrays.asList(1, 0)));
+        .assertEval(
+            is(
+                list((byte) 20, (byte) 30, (byte) 30, (byte) 20, (byte) 30,
+                    (byte) 30, (byte) 10, (byte) 20, (byte) 10, (byte) 30,
+                    (byte) 20, (byte) 30, (byte) 20, (byte) 10)));
   }
 
   @Test public void testError() {

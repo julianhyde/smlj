@@ -27,6 +27,7 @@ import net.hydromatic.sml.type.TypeSystem;
  */
 public interface ForeignValue {
   Type type(TypeSystem typeSystem);
+  Object value();
 }
 
 // End ForeignValue.java
