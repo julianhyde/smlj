@@ -491,6 +491,9 @@ public class MainTest {
 
   @Test public void testHdIsPolymorphic() {
     assertType("(List_hd [1, 2], List_hd [false, true])", is("int * bool"));
+  }
+
+  @Test public void testHdIsPolymorphic2() {
     assertType("let\n"
             + "  val h = List_hd\n"
             + "in\n"
