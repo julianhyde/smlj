@@ -16,18 +16,6 @@
  * language governing permissions and limitations under the
  * License.
  *)
-val emps =
-  let
-    val emp0 = {id = 100, name = "Fred", deptno = 10}
-    and emp1 = {id = 101, name = "Velma", deptno = 20}
-    and emp2 = {id = 102, name = "Shaggy", deptno = 30}
-    and emp3 = {id = 103, name = "Scooby", deptno = 30}
-  in
-    [emp0, emp1, emp2, emp3]
-  end;
-from e in emps
-group (#deptno e) as deptno
-  compute sum of (#name e) as sumId,
-          count of e as count;
+"this is a simple script; modify it for debugging test cases";
 
 (*) End dummy.sml
