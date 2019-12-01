@@ -1143,10 +1143,26 @@ public class MainTest {
         .withBinding("scott", ForeignValues.scott())
         .assertType("int list")
         .assertEval(
+            is(list(20, 30, 30, 20, 30, 30, 10, 20, 10, 30, 20, 30, 20, 10)));
+  }
+
+  @Test public void testScottJoin() {
+    final String ml = "let\n"
+        + "  val emps = #emp scott\n"
+        + "  and depts = #dept scott\n"
+        + "in\n"
+        + "  from e in emps, d in depts\n"
+        + "    where #deptno e = #deptno d\n"
+        + "    andalso #empno e >= 7900\n"
+        + "    yield {empno = #empno e, dname = #dname d}\n"
+        + "end\n";
+    ml(ml)
+        .withBinding("scott", ForeignValues.scott())
+        .assertType("{dname:string, empno:int} list")
+        .assertEval(
             is(
-                list((byte) 20, (byte) 30, (byte) 30, (byte) 20, (byte) 30,
-                    (byte) 30, (byte) 10, (byte) 20, (byte) 10, (byte) 30,
-                    (byte) 20, (byte) 30, (byte) 20, (byte) 10)));
+                list(list("SALES", 7900), list("RESEARCH", 7902),
+                    list("ACCOUNTING", 7934))));
   }
 
   @Test public void testError() {
