@@ -130,3 +130,14 @@ in
   f (g 0)
 end;
 val it = 1 : int
+
+
+(*) Define a function using a higher-order functions
+val longest = List_foldl (fn (s, t) => if String_size s > String_size t then s else t) "";
+val longest = fn : string list -> string
+
+longest ["ab", "cde", "", "f"];
+val it = "cde" : string
+
+longest [];
+val it = "" : string

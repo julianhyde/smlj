@@ -94,4 +94,9 @@ in
   f (g 0)
 end;
 
+(*) Define a function using a higher-order functions
+val longest = List_foldl (fn (s, t) => if String_size s > String_size t then s else t) "";
+longest ["ab", "cde", "", "f"];
+longest [];
+
 (*) End simple.sml
