@@ -24,8 +24,11 @@ import org.apache.calcite.schema.SchemaPlus;
 
 import com.google.common.base.Suppliers;
 
+import net.hydromatic.foodmart.data.hsqldb.FoodmartHsqldb;
 import net.hydromatic.scott.data.hsqldb.ScottHsqldb;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.function.Supplier;
 import javax.sql.DataSource;
 
@@ -33,6 +36,18 @@ import javax.sql.DataSource;
 public abstract class ForeignValues {
   private static final Supplier<SchemaPlus> ROOT_SCHEMA =
       Suppliers.memoize(() -> CalciteSchema.createRootSchema(false).plus());
+
+  private static final Supplier<SchemaPlus> FOODMART_SCHEMA =
+      Suppliers.memoize(() -> {
+        final DataSource dataSource =
+            JdbcSchema.dataSource(FoodmartHsqldb.URI, null, FoodmartHsqldb.USER,
+                FoodmartHsqldb.PASSWORD);
+        final String name = "foodmart";
+        final SchemaPlus rootSchema = ROOT_SCHEMA.get();
+        final JdbcSchema schema =
+            JdbcSchema.create(rootSchema, name, dataSource, null, "foodmart");
+        return rootSchema.add(name, schema);
+      });
 
   private static final Supplier<SchemaPlus> SCOTT_SCHEMA =
       Suppliers.memoize(() -> {
@@ -53,16 +68,38 @@ public abstract class ForeignValues {
    * <p>It is a record with fields for the following tables:
    *
    * <ul>
-   *   <dl>
-   *     <dt>dept</dt>
-   *     <dd>Departments table</dd>
-   *     <dt>emp</dt>
-   *     <dd>Employees table</dd>
-   *   </dl>
+   *   <li>{@code bonus} - Bonus table
+   *   <li>{@code dept} - Departments table
+   *   <li>{@code emp} - Employees table
+   *   <li>{@code salgrade} - Salary grade table
    * </ul>
    */
   public static ForeignValue scott() {
     return new CalciteForeignValue(SCOTT_SCHEMA.get(), true);
+  }
+
+  /** Returns a value based on the Foodmart JDBC database.
+   *
+   * <p>It is a record with fields for the following tables:
+   *
+   * <ul>
+   *   <li>{@code bonus} - Bonus table
+   *   <li>{@code dept} - Departments table
+   *   <li>{@code emp} - Employees table
+   *   <li>{@code salgrade} - Salary grade table
+   * </ul>
+   */
+  public static ForeignValue foodmart() {
+    return new CalciteForeignValue(FOODMART_SCHEMA.get(), true);
+  }
+
+  public static Map<String, ForeignValue> getStringForeignValueMap() {
+    final Map<String, ForeignValue> valueMap = new LinkedHashMap<>();
+    if (true) {
+      valueMap.put("foodmart", foodmart());
+      valueMap.put("scott", scott());
+    }
+    return valueMap;
   }
 }
 

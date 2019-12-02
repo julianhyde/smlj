@@ -22,7 +22,8 @@ import net.hydromatic.sml.ast.AstNode;
 import net.hydromatic.sml.compile.CompiledStatement;
 import net.hydromatic.sml.compile.Compiles;
 import net.hydromatic.sml.compile.Environment;
-import net.hydromatic.sml.compile.Environments;
+import net.hydromatic.sml.foreign.ForeignValue;
+import net.hydromatic.sml.foreign.ForeignValues;
 import net.hydromatic.sml.parse.ParseException;
 import net.hydromatic.sml.parse.SmlParserImpl;
 import net.hydromatic.sml.type.Binding;
@@ -42,6 +43,7 @@ import java.io.Writer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 /** Standard ML REPL. */
 public class Main {
@@ -99,7 +101,8 @@ public class Main {
     final TypeSystem typeSystem = new TypeSystem();
     final BufferingReader in2 = new BufferingReader(in);
     final SmlParserImpl parser = new SmlParserImpl(in2);
-    Environment env = Environments.empty();
+    final Map<String, ForeignValue> valueMap = ForeignValues.getStringForeignValueMap();
+    Environment env = Compiles.createEnvironment(typeSystem, valueMap);
     final List<String> lines = new ArrayList<>();
     final List<Binding> bindings = new ArrayList<>();
     for (;;) {

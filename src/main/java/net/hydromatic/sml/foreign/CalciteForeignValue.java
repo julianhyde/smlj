@@ -20,10 +20,8 @@ package net.hydromatic.sml.foreign;
 
 import org.apache.calcite.DataContext;
 import org.apache.calcite.adapter.java.JavaTypeFactory;
-import org.apache.calcite.interpreter.Interpreter;
 import org.apache.calcite.linq4j.QueryProvider;
 import org.apache.calcite.linq4j.function.Function1;
-import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.schema.SchemaPlus;
@@ -33,7 +31,6 @@ import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.ImmutableNullableList;
 
-import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedMap;
 
@@ -42,13 +39,14 @@ import net.hydromatic.sml.type.RecordType;
 import net.hydromatic.sml.type.Type;
 import net.hydromatic.sml.type.TypeSystem;
 
-import java.util.AbstractList;
+import java.sql.Date;
+import java.sql.Time;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.function.Supplier;
 
 /** Value based on a Calcite schema.
  *
@@ -129,14 +127,31 @@ class CalciteForeignValue implements ForeignValue {
       return new FieldConverter(PrimitiveType.REAL, ordinal) {
         public Float convertFrom(Object[] sourceValues) {
           final Number sourceValue = (Number) sourceValues[ordinal];
-          return sourceValues[ordinal] == null ? 0f : sourceValue.floatValue();
+          return sourceValue == null ? 0f : sourceValue.floatValue();
         }
       };
 
     case DATE:
       return new FieldConverter(PrimitiveType.STRING, ordinal) {
         public String convertFrom(Object[] sourceValues) {
-          return ((java.sql.Date) sourceValues[ordinal]).toString();
+          final Date sourceValue = (Date) sourceValues[ordinal];
+          return sourceValue == null ? "" : sourceValue.toString();
+        }
+      };
+
+    case TIME:
+      return new FieldConverter(PrimitiveType.STRING, ordinal) {
+        public String convertFrom(Object[] sourceValues) {
+          final Time sourceValue = (Time) sourceValues[ordinal];
+          return sourceValue == null ? "" : sourceValue.toString();
+        }
+      };
+
+    case TIMESTAMP:
+      return new FieldConverter(PrimitiveType.STRING, ordinal) {
+        public String convertFrom(Object[] sourceValues) {
+          final Timestamp sourceValue = (Timestamp) sourceValues[ordinal];
+          return sourceValue == null ? "" : sourceValue.toString();
         }
       };
 
@@ -145,7 +160,8 @@ class CalciteForeignValue implements ForeignValue {
     default:
       return new FieldConverter(PrimitiveType.STRING, ordinal) {
         public String convertFrom(Object[] sourceValues) {
-          return (String) sourceValues[ordinal];
+          final String sourceValue = (String) sourceValues[ordinal];
+          return sourceValue == null ? "" : sourceValue;
         }
       };
     }
@@ -157,7 +173,10 @@ class CalciteForeignValue implements ForeignValue {
     final List<String> names = Schemas.path(schema).names();
     schema.getTableNames().forEach(tableName ->
         fieldValues.add(
-            new RelList(relBuilder.scan(plus(names, tableName)).build())));
+            new RelList(relBuilder.scan(plus(names, tableName)).build(),
+                new EmptyDataContext((JavaTypeFactory) relBuilder.getTypeFactory(),
+                    rootSchema(schema)),
+                new Converter(relBuilder.scan(plus(names, tableName)).build().getRowType()))));
     return fieldValues.build();
   }
 
@@ -166,58 +185,31 @@ class CalciteForeignValue implements ForeignValue {
     return ImmutableList.<E>builder().addAll(list).add(e).build();
   }
 
-  /** A list whose contents are computed by evaluating a relational
-   * expression. */
-  private class RelList extends AbstractList<Object> {
-    private final RelNode rel;
+  /** Converts from a Calcite row to an SML record.
+   *
+   * <p>The Calcite row is represented as an array, ordered by field ordinal;
+   * the SML record is represented by a list, ordered by field name
+   * (lower-case if {@link #lower}). */
+  private class Converter implements Function1<Object[], List<Object>> {
+    final Object[] tempValues;
+    final FieldConverter[] fieldConverters;
 
-    private final Supplier<List<List<Object>>> supplier;
-
-    protected RelList(RelNode rel) {
-      this.rel = rel;
-      supplier = Suppliers.memoize(() ->
-          new Interpreter(
-              new EmptyDataContext(
-                  (JavaTypeFactory) relBuilder.getTypeFactory(),
-                  rootSchema(schema)), rel)
-              .select(new Converter(rel.getRowType()))
-              .toList());
-    }
-
-    public Object get(int index) {
-      return supplier.get().get(index);
-    }
-
-    public int size() {
-      return supplier.get().size();
-    }
-
-    /** Converts from a Calcite row to an SML record.
-     *
-     * <p>The Calcite row is represented as an array, ordered by field ordinal;
-     * the SML record is represented by a list, ordered by field name
-     * (lower-case if {@link #lower}). */
-    private class Converter implements Function1<Object[], List<Object>> {
-      final Object[] tempValues;
-      final FieldConverter[] fieldConverters;
-
-      Converter(RelDataType rowType) {
-        final List<RelDataTypeField> fields =
-            new ArrayList<>(rowType.getFieldList());
-        fields.sort(Comparator.comparing(f -> convert(f.getName())));
-        tempValues = new Object[fields.size()];
-        fieldConverters = new FieldConverter[fields.size()];
-        for (int i = 0; i < fieldConverters.length; i++) {
-          fieldConverters[i] = toType(fields.get(i));
-        }
+    Converter(RelDataType rowType) {
+      final List<RelDataTypeField> fields =
+          new ArrayList<>(rowType.getFieldList());
+      fields.sort(Comparator.comparing(f -> convert(f.getName())));
+      tempValues = new Object[fields.size()];
+      fieldConverters = new FieldConverter[fields.size()];
+      for (int i = 0; i < fieldConverters.length; i++) {
+        fieldConverters[i] = toType(fields.get(i));
       }
+    }
 
-      public List<Object> apply(Object[] a) {
-        for (int i = 0; i < tempValues.length; i++) {
-          tempValues[i] = fieldConverters[i].convertFrom(a);
-        }
-        return ImmutableNullableList.copyOf(tempValues);
+    public List<Object> apply(Object[] a) {
+      for (int i = 0; i < tempValues.length; i++) {
+        tempValues[i] = fieldConverters[i].convertFrom(a);
       }
+      return ImmutableNullableList.copyOf(tempValues);
     }
   }
 

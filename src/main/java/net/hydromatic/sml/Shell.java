@@ -25,7 +25,7 @@ import net.hydromatic.sml.compile.CompileException;
 import net.hydromatic.sml.compile.CompiledStatement;
 import net.hydromatic.sml.compile.Compiles;
 import net.hydromatic.sml.compile.Environment;
-import net.hydromatic.sml.compile.Environments;
+import net.hydromatic.sml.foreign.ForeignValues;
 import net.hydromatic.sml.parse.ParseException;
 import net.hydromatic.sml.parse.SmlParserImpl;
 import net.hydromatic.sml.type.Binding;
@@ -179,7 +179,8 @@ public class Shell {
 
     pause();
     final TypeSystem typeSystem = new TypeSystem();
-    Environment env = Environments.empty();
+    Environment env = Compiles.createEnvironment(typeSystem,
+        ForeignValues.getStringForeignValueMap());
     final StringBuilder buf = new StringBuilder();
     final List<String> lines = new ArrayList<>();
     final List<Binding> bindings = new ArrayList<>();
