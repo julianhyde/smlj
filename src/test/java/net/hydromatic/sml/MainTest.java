@@ -19,11 +19,11 @@
 package net.hydromatic.sml;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Sets;
 
 import net.hydromatic.sml.ast.Ast;
 import net.hydromatic.sml.ast.AstNode;
-import net.hydromatic.sml.foreign.ForeignValues;
 import net.hydromatic.sml.type.TypeVar;
 
 import org.hamcrest.CustomTypeSafeMatcher;
@@ -104,7 +104,7 @@ public class MainTest {
     final ByteArrayOutputStream out = new ByteArrayOutputStream();
     try (PrintStream ps = new PrintStream(out)) {
       final InputStream in = new ByteArrayInputStream(new byte[0]);
-      new Main(args, in, ps).run();
+      new Main(args, in, ps, ImmutableMap.of()).run();
     }
     assertThat(out.size(), is(0));
   }
@@ -120,7 +120,7 @@ public class MainTest {
     final ByteArrayOutputStream out = new ByteArrayOutputStream();
     try (PrintStream ps = new PrintStream(out)) {
       final InputStream in = new ByteArrayInputStream(ml.getBytes());
-      new Main(args, in, ps).run();
+      new Main(args, in, ps, ImmutableMap.of()).run();
     }
     final String expected = "val x = 5 : int\n"
         + "val it = 5 : int\n"
@@ -1200,7 +1200,7 @@ public class MainTest {
         + "  from e in emps yield #deptno e\n"
         + "end\n";
     ml(ml)
-        .withBinding("scott", ForeignValues.scott())
+        .withBinding("scott", DataSet.SCOTT.foreignValue())
         .assertType("int list")
         .assertEval(
             is(list(20, 30, 30, 20, 30, 30, 10, 20, 10, 30, 20, 30, 20, 10)));
@@ -1217,7 +1217,7 @@ public class MainTest {
         + "    yield {empno = #empno e, dname = #dname d}\n"
         + "end\n";
     ml(ml)
-        .withBinding("scott", ForeignValues.scott())
+        .withBinding("scott", DataSet.SCOTT.foreignValue())
         .assertType("{dname:string, empno:int} list")
         .assertEval(
             is(
@@ -1232,7 +1232,7 @@ public class MainTest {
         + "  andalso #empno e >= 7900\n"
         + "  yield {empno = #empno e, dname = #dname d}\n";
     ml(ml)
-        .withBinding("scott", ForeignValues.scott())
+        .withBinding("scott", DataSet.SCOTT.foreignValue())
         .assertType("{dname:string, empno:int} list")
         .assertEval(
             is(

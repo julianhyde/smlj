@@ -23,8 +23,10 @@ import net.hydromatic.sml.type.TypeSystem;
 
 /** External value.
  *
- * @see ForeignValues
- */
+ * <p>A common example is a table backed by a JDBC database, that manifests in
+ * ML as a list of records.
+ *
+ * @see CalciteForeignValue */
 public interface ForeignValue {
   Type type(TypeSystem typeSystem);
   Object value();

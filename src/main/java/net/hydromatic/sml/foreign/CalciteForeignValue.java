@@ -52,13 +52,13 @@ import java.util.Objects;
  *
  * <p>In ML, it appears as a record with a field for each table.
  */
-class CalciteForeignValue implements ForeignValue {
+public class CalciteForeignValue implements ForeignValue {
   private final SchemaPlus schema;
   private final boolean lower;
   private final RelBuilder relBuilder;
 
   /** Creates a CalciteForeignValue. */
-  CalciteForeignValue(SchemaPlus schema, boolean lower) {
+  public CalciteForeignValue(SchemaPlus schema, boolean lower) {
     this.schema = Objects.requireNonNull(schema);
     this.lower = lower;
     this.relBuilder = RelBuilder.create(Frameworks.newConfigBuilder()
