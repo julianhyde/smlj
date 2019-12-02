@@ -1225,6 +1225,21 @@ public class MainTest {
                     list("ACCOUNTING", 7934))));
   }
 
+  /** As {@link #testScottJoin()} but without intermediate variables. */
+  @Test public void testScottJoin2() {
+    final String ml = "from e in #emp scott, d in #dept scott\n"
+        + "  where #deptno e = #deptno d\n"
+        + "  andalso #empno e >= 7900\n"
+        + "  yield {empno = #empno e, dname = #dname d}\n";
+    ml(ml)
+        .withBinding("scott", ForeignValues.scott())
+        .assertType("{dname:string, empno:int} list")
+        .assertEval(
+            is(
+                list(list("SALES", 7900), list("RESEARCH", 7902),
+                    list("ACCOUNTING", 7934))));
+  }
+
   @Test public void testError() {
     ml("fn x y => x + y")
         .assertError(
