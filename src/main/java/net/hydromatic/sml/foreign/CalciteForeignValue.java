@@ -110,6 +110,7 @@ class CalciteForeignValue implements ForeignValue {
           return (Boolean) sourceValues[ordinal];
         }
       };
+
     case TINYINT:
     case SMALLINT:
     case INTEGER:
@@ -120,22 +121,25 @@ class CalciteForeignValue implements ForeignValue {
           return sourceValue == null ? 0 : sourceValue.intValue();
         }
       };
+
     case FLOAT:
     case REAL:
     case DOUBLE:
     case DECIMAL:
       return new FieldConverter(PrimitiveType.REAL, ordinal) {
-        public Double convertFrom(Object[] sourceValues) {
+        public Float convertFrom(Object[] sourceValues) {
           final Number sourceValue = (Number) sourceValues[ordinal];
-          return sourceValues[ordinal] == null ? 0d : sourceValue.doubleValue();
+          return sourceValues[ordinal] == null ? 0f : sourceValue.floatValue();
         }
       };
+
     case DATE:
       return new FieldConverter(PrimitiveType.STRING, ordinal) {
         public String convertFrom(Object[] sourceValues) {
           return ((java.sql.Date) sourceValues[ordinal]).toString();
         }
       };
+
     case VARCHAR:
     case CHAR:
     default:
