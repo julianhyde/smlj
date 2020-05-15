@@ -35,7 +35,6 @@ import net.hydromatic.morel.type.DummyType;
 import net.hydromatic.morel.type.FnType;
 import net.hydromatic.morel.type.ForallType;
 import net.hydromatic.morel.type.ListType;
-import net.hydromatic.morel.type.NamedType;
 import net.hydromatic.morel.type.PrimitiveType;
 import net.hydromatic.morel.type.RecordType;
 import net.hydromatic.morel.type.TupleType;
@@ -116,7 +115,7 @@ public class TypeResolver {
     final TypeEnv typeEnv = typeEnvs.typeEnv;
     final Map<Ast.IdPat, Unifier.Term> termMap = new LinkedHashMap<>();
     final Ast.Decl node2 = deduceDeclType(typeEnv, decl, termMap);
-    final boolean debug = false;
+    final boolean debug = true;
     final Unifier.Tracer tracer = debug
         ? Tracers.printTracer(System.out)
         : Tracers.nullTracer();
@@ -640,14 +639,17 @@ public class TypeResolver {
   private void deduceDatatypeBindType(TypeEnv env,
       Ast.DatatypeBind datatypeBind, Map<Ast.IdPat, Unifier.Term> termMap) {
     final Map<String, Type> tyCons = new TreeMap<>();
+    final List<TypeVar> typeVars = new ArrayList<>();
+    for (Ast.TyVar tyVar : datatypeBind.tyVars) {
+      typeVars.add((TypeVar) toType(tyVar));
+    }
     final TypeSystem.TemporaryType tempType =
-        typeSystem.temporaryType(datatypeBind.name.name);
+        typeSystem.temporaryType(datatypeBind.name.name, typeVars);
     for (Ast.TyCon tyCon : datatypeBind.tyCons) {
       tyCons.put(tyCon.id.name,
           tyCon.type == null ? DummyType.INSTANCE : toType(tyCon.type));
     }
     tempType.delete();
-    final List<TypeVar> typeVars = new ArrayList<>();
     final DataType dataType =
         typeSystem.dataType(datatypeBind.name.name, typeVars, tyCons);
     for (Ast.TyCon tyCon : datatypeBind.tyCons) {
@@ -998,9 +1000,10 @@ public class TypeResolver {
       return variable != null ? variable : unifier.variable();
     case DATA_TYPE:
       final DataType dataType = (DataType) type;
-      return unifier.apply(dataType.name(), toTerms(dataType.typeVars, subst));
+      return unifier.apply(dataType.name(), toTerms(dataType.parameterTypes, subst));
     case TEMPORARY_DATA_TYPE:
-      return unifier.atom(((NamedType) type).name());
+      final TypeSystem.TemporaryType tempType = (TypeSystem.TemporaryType) type;
+      return unifier.apply(tempType.name(), toTerms(tempType.typeVars, subst));
     case FUNCTION_TYPE:
       final FnType fnType = (FnType) type;
       return unifier.apply(FN_TY_CON, toTerm(fnType.paramType, subst),

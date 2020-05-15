@@ -18,10 +18,12 @@
  */
 package net.hydromatic.morel.type;
 
+import com.google.common.collect.ImmutableSortedMap;
+
 import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
-import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 /** Algebraic type. */
 public class PolymorphicDataType extends DataType {
@@ -37,14 +39,19 @@ public class PolymorphicDataType extends DataType {
     super(typeSystem, name, description, typeVars, typeConstructors);
   }
 
-  public Type copy(TypeSystem typeSystem, Function<Type, Type> transform) {
-    return new PolymorphicDataType(typeSystem, name, description,
-        getTypeVars(), copyTypes(typeSystem, typeConstructors, transform));
+  @Override public PolymorphicDataType copy(TypeSystem typeSystem,
+      UnaryOperator<Type> transform) {
+    final ImmutableSortedMap<String, Type> typeConstructors =
+        copyTypeConstructors(typeSystem, this.typeConstructors, transform);
+    return typeConstructors.equals(this.typeConstructors)
+        ? this
+        : new PolymorphicDataType(typeSystem, name, description, getTypeVars(),
+            typeConstructors);
   }
 
   @SuppressWarnings("unchecked")
   public List<TypeVar> getTypeVars() {
-    return (List<TypeVar>) typeVars;
+    return (List<TypeVar>) parameterTypes;
   }
 }
 

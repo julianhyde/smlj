@@ -21,7 +21,7 @@ package net.hydromatic.morel.type;
 import net.hydromatic.morel.ast.Op;
 
 import java.util.Locale;
-import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 /** Primitive type. */
 public enum PrimitiveType implements Type {
@@ -47,8 +47,9 @@ public enum PrimitiveType implements Type {
     return typeVisitor.visit(this);
   }
 
-  public Type copy(TypeSystem typeSystem, Function<Type, Type> transform) {
-    return transform.apply(this);
+  public PrimitiveType copy(TypeSystem typeSystem,
+      UnaryOperator<Type> transform) {
+    return this;
   }
 }
 

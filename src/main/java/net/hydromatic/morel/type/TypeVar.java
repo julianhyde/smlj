@@ -26,7 +26,7 @@ import com.google.common.cache.LoadingCache;
 import net.hydromatic.morel.ast.Op;
 
 import java.util.concurrent.ExecutionException;
-import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 /** Type variable (e.g. {@code 'a}). */
 public class TypeVar implements Type {
@@ -87,8 +87,8 @@ public class TypeVar implements Type {
     return Op.TY_VAR;
   }
 
-  public Type copy(TypeSystem typeSystem, Function<Type, Type> transform) {
-    return transform.apply(this);
+  public TypeVar copy(TypeSystem typeSystem, UnaryOperator<Type> transform) {
+    return this;
   }
 }
 

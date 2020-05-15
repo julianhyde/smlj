@@ -86,6 +86,11 @@ public class TypeVisitor<R> {
     }
     return r;
   }
+
+  /** Visits a {@link DummyType}. */
+  public R visit(DummyType dummyType) {
+    return null;
+  }
 }
 
 // End TypeVisitor.java

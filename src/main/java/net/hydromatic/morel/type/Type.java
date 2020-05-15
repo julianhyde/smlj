@@ -20,7 +20,7 @@ package net.hydromatic.morel.type;
 
 import net.hydromatic.morel.ast.Op;
 
-import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 /** Type. */
 public interface Type {
@@ -45,7 +45,7 @@ public interface Type {
 
   /** Copies this type, applying a given transform to component types,
    * and returning the original type if the component types are unchanged. */
-  Type copy(TypeSystem typeSystem, Function<Type, Type> transform);
+  Type copy(TypeSystem typeSystem, UnaryOperator<Type> transform);
 
   <R> R accept(TypeVisitor<R> typeVisitor);
 }

@@ -20,7 +20,7 @@ package net.hydromatic.morel.type;
 
 import net.hydromatic.morel.ast.Op;
 
-import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 /** The type of a function value. */
 public class FnType extends BaseType {
@@ -37,7 +37,7 @@ public class FnType extends BaseType {
     return typeVisitor.visit(this);
   }
 
-  public Type copy(TypeSystem typeSystem, Function<Type, Type> transform) {
+  public FnType copy(TypeSystem typeSystem, UnaryOperator<Type> transform) {
     final Type paramType2 = paramType.copy(typeSystem, transform);
     final Type resultType2 = resultType.copy(typeSystem, transform);
     return paramType2 == paramType

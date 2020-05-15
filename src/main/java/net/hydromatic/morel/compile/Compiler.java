@@ -467,7 +467,8 @@ public class Compiler {
         final List<Binding> immutableBindings =
             ImmutableList.copyOf(newBindings);
         actions.add((output, outBindings, evalEnv) -> {
-          output.add("datatype " + bind);
+          output.add("datatype " + dataType.moniker + " = "
+              + dataType.description());
           outBindings.addAll(immutableBindings);
         });
       }

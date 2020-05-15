@@ -20,7 +20,7 @@ package net.hydromatic.morel.type;
 
 import net.hydromatic.morel.ast.Op;
 
-import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 /** Type that is a place-holder for a type constructor that has no arguments;
  * for example, "NONE" in "datatype 'a option = NONE | SOME of 'a" would have
@@ -37,11 +37,11 @@ public enum DummyType implements Type {
   }
 
   public <R> R accept(TypeVisitor<R> typeVisitor) {
-    return (R) this;
+    return typeVisitor.visit(this);
   }
 
-  public Type copy(TypeSystem typeSystem, Function<Type, Type> transform) {
-    return transform.apply(this);
+  public DummyType copy(TypeSystem typeSystem, UnaryOperator<Type> transform) {
+    return this;
   }
 }
 

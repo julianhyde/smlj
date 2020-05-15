@@ -21,11 +21,11 @@ package net.hydromatic.morel.type;
 import com.google.common.collect.ImmutableList;
 
 import net.hydromatic.morel.ast.Op;
+import net.hydromatic.morel.util.Ord;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import java.util.function.UnaryOperator;
 
 /** Type that is a polymorphic type applied to a set of types. */
 public class ApplyType extends BaseType {
@@ -40,16 +40,32 @@ public class ApplyType extends BaseType {
   }
 
   static String computeDescription(Type type, List<Type> types) {
-    return types.stream().map(Type::moniker)
-        .collect(Collectors.joining(",", "<", ">"))
-        + type.moniker();
+    final StringBuilder b = new StringBuilder();
+    switch (types.size()) {
+    case 0:
+      break;
+    case 1:
+      b.append(types.get(0).moniker()).append(' ');
+      break;
+    default:
+      b.append('(');
+      Ord.forEach(types, (t, i) -> {
+        if (i > 0) {
+          b.append(',');
+        }
+        b.append(t.moniker());
+      });
+      b.append(") ");
+    }
+    b.append(type.moniker());
+    return b.toString();
   }
 
   public <R> R accept(TypeVisitor<R> typeVisitor) {
     return typeVisitor.visit(this);
   }
 
-  public Type copy(TypeSystem typeSystem, Function<Type, Type> transform) {
+  public Type copy(TypeSystem typeSystem, UnaryOperator<Type> transform) {
     final Type type2 = type.copy(typeSystem, transform);
     //noinspection UnstableApiUsage
     final ImmutableList<Type> types2 =

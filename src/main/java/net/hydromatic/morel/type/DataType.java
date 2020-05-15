@@ -24,19 +24,20 @@ import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Ordering;
 
 import net.hydromatic.morel.ast.Op;
+import net.hydromatic.morel.util.Ord;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.SortedMap;
-import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import javax.annotation.Nonnull;
 
 /** Algebraic type. */
 public class DataType extends BaseType implements NamedType {
   public final String name;
   public final String moniker;
-  public final List<? extends Type> typeVars;
+  public final List<? extends Type> parameterTypes;
   public final SortedMap<String, Type> typeConstructors;
 
   /** Creates a DataType.
@@ -47,15 +48,16 @@ public class DataType extends BaseType implements NamedType {
    * creating self-referential data types) to be replaced with real DataType
    * instances. */
   DataType(TypeSystem typeSystem, String name, String description,
-      List<? extends Type> typeVars, SortedMap<String, Type> typeConstructors) {
+      List<? extends Type> parameterTypes,
+      SortedMap<String, Type> typeConstructors) {
     super(Op.DATA_TYPE, description);
     this.name = Objects.requireNonNull(name);
-    this.moniker = computeMoniker(name, typeVars);
-    this.typeVars = ImmutableList.copyOf(typeVars);
+    this.moniker = computeMoniker(name, parameterTypes);
+    this.parameterTypes = ImmutableList.copyOf(parameterTypes);
     if (typeSystem == null) {
       this.typeConstructors = ImmutableSortedMap.copyOf(typeConstructors);
     } else {
-      this.typeConstructors = copyTypes(typeSystem, typeConstructors,
+      this.typeConstructors = copyTypeConstructors(typeSystem, typeConstructors,
           t -> (t instanceof TypeSystem.TemporaryType
                 && ((TypeSystem.TemporaryType) t).name().equals(name))
             ? DataType.this
@@ -70,21 +72,29 @@ public class DataType extends BaseType implements NamedType {
       return name;
     }
     final StringBuilder b = new StringBuilder();
-    typeVars.forEach(t -> {
+    if (typeVars.size() > 1) {
+      b.append('(');
+    }
+    Ord.forEach(typeVars, (t, i) -> {
+      if (i > 0) {
+        b.append(",");
+      }
       if (t instanceof TupleType) {
         b.append('(').append(t.moniker()).append(')');
       } else {
         b.append(t.moniker());
       }
-      b.append(' ');
     });
-    return b.append(name).toString();
+    if (typeVars.size() > 1) {
+      b.append(')');
+    }
+    return b.append(' ').append(name).toString();
   }
 
-  protected ImmutableSortedMap<String, Type> copyTypes(
+  protected ImmutableSortedMap<String, Type> copyTypeConstructors(
       @Nonnull TypeSystem typeSystem,
       @Nonnull SortedMap<String, Type> typeConstructors,
-      @Nonnull Function<Type, Type> transform) {
+      @Nonnull UnaryOperator<Type> transform) {
     final ImmutableSortedMap.Builder<String, Type> builder =
         ImmutableSortedMap.naturalOrder();
     typeConstructors.forEach((k, v) ->
@@ -96,9 +106,13 @@ public class DataType extends BaseType implements NamedType {
     return typeVisitor.visit(this);
   }
 
-  public Type copy(TypeSystem typeSystem, Function<Type, Type> transform) {
-    return new DataType(typeSystem, name, description, typeVars,
-        copyTypes(typeSystem, typeConstructors, transform));
+  public DataType copy(TypeSystem typeSystem, UnaryOperator<Type> transform) {
+    final ImmutableSortedMap<String, Type> typeConstructors =
+        copyTypeConstructors(typeSystem, this.typeConstructors, transform);
+    return typeConstructors.equals(this.typeConstructors)
+        ? this
+        : new DataType(typeSystem, name, description, parameterTypes,
+            typeConstructors);
   }
 
   public String name() {
@@ -110,7 +124,7 @@ public class DataType extends BaseType implements NamedType {
   }
 
   static String computeDescription(Map<String, Type> tyCons) {
-    final StringBuilder buf = new StringBuilder("(");
+    final StringBuilder buf = new StringBuilder();
     tyCons.forEach((tyConName, tyConType) -> {
       if (buf.length() > 1) {
         buf.append(" | ");
@@ -121,7 +135,7 @@ public class DataType extends BaseType implements NamedType {
         buf.append(tyConType.moniker());
       }
     });
-    return buf.append(")").toString();
+    return buf.toString();
   }
 }
 

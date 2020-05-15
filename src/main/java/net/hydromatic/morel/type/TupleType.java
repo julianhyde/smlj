@@ -24,7 +24,7 @@ import net.hydromatic.morel.ast.Op;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 /** The type of a tuple value. */
 public class TupleType extends BaseType {
@@ -39,7 +39,7 @@ public class TupleType extends BaseType {
     return typeVisitor.visit(this);
   }
 
-  public Type copy(TypeSystem typeSystem, Function<Type, Type> transform) {
+  public TupleType copy(TypeSystem typeSystem, UnaryOperator<Type> transform) {
     int differenceCount = 0;
     final ImmutableList.Builder<Type> argTypes2 = ImmutableList.builder();
     for (Type argType : argTypes) {

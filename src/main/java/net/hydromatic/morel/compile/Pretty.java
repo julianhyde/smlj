@@ -230,7 +230,7 @@ class Pretty {
       list = (List) value;
       if (dataType.name.equals("vector")) {
         return printList(buf.append('#'), indent, lineEnd, depth,
-            dataType.typeVars.get(0), list);
+            dataType.parameterTypes.get(0), list);
       }
       final String tyConName = (String) list.get(0);
       buf.append(tyConName);

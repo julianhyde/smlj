@@ -1377,16 +1377,13 @@ public abstract class Codes {
 
   /** Creates an empty evaluation environment. */
   public static EvalEnv emptyEnv() {
-    final Map<String, Object> map = new HashMap<>();
-    populateBuiltIns(map);
-    return EvalEnvs.copyOf(map);
+    return EvalEnvs.copyOf(BUILT_IN_MAP);
   }
 
   /** Creates an evaluation environment that contains the bound values from a
    * compilation environment. */
   public static EvalEnv emptyEnvWith(Environment env) {
-    final Map<String, Object> map = new HashMap<>();
-    populateBuiltIns(map);
+    final Map<String, Object> map = new HashMap<>(BUILT_IN_MAP);
     env.forEachValue(map::put);
     return EvalEnvs.copyOf(map);
   }
@@ -1578,6 +1575,13 @@ public abstract class Codes {
           .put(BuiltIn.VECTOR_ALL, VECTOR_ALL)
           .put(BuiltIn.VECTOR_COLLATE, VECTOR_COLLATE)
           .build();
+
+  private static final Map<String, Object> BUILT_IN_MAP;
+  static {
+    final Map<String, Object> map = new HashMap<>();
+    populateBuiltIns(map);
+    BUILT_IN_MAP = ImmutableMap.copyOf(map);
+  }
 
   /** A code that evaluates expressions and creates a tuple with the results.
    *
