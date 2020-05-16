@@ -51,6 +51,16 @@ public class TypeVar implements Type {
     return "'#" + ordinal;
   }
 
+  @Override public int hashCode() {
+    return ordinal + 3259;
+  }
+
+  @Override public boolean equals(Object obj) {
+    return this == obj
+        || obj instanceof TypeVar
+        && ordinal == ((TypeVar) obj).ordinal;
+  }
+
   public <R> R accept(TypeVisitor<R> typeVisitor) {
     return typeVisitor.visit(this);
   }

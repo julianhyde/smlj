@@ -46,7 +46,7 @@ public class TypeShuttle extends TypeVisitor<Type> {
     return recordType.copy(typeSystem, t -> t.accept(this));
   }
 
-  @Override public DataType visit(DataType dataType) {
+  @Override public Type visit(DataType dataType) {
     return dataType.copy(typeSystem, t -> t.accept(this));
   }
 

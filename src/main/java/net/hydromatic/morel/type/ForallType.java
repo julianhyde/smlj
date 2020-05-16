@@ -37,6 +37,18 @@ public class ForallType extends BaseType {
     this.type = Objects.requireNonNull(type);
   }
 
+  static String computeDescription(Iterable<TypeVar> typeVars, Type type) {
+    final StringBuilder b = new StringBuilder();
+    b.append("forall");
+    for (TypeVar typeVar : typeVars) {
+      b.append(' ').append(typeVar.moniker());
+    }
+    b.append(". ");
+    TypeSystem.unparse(b, type, 0, 0);
+
+    return b.toString();
+  }
+
   public <R> R accept(TypeVisitor<R> typeVisitor) {
     return typeVisitor.visit(this);
   }

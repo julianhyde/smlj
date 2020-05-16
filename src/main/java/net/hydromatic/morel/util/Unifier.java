@@ -22,7 +22,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.Ordering;
 
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -144,7 +143,7 @@ public abstract class Unifier {
   public static final class SubstitutionResult extends Substitution
       implements Result {
     private SubstitutionResult(Map<Variable, Term> resultMap) {
-      super(ImmutableSortedMap.copyOf(resultMap, Ordering.natural()));
+      super(ImmutableSortedMap.copyOf(resultMap));
     }
 
     /** Empty substitution result. */
@@ -153,8 +152,7 @@ public abstract class Unifier {
 
     /** Creates a substitution result from a map. */
     public static SubstitutionResult create(Map<Variable, Term> resultMap) {
-      return new SubstitutionResult(
-          ImmutableSortedMap.copyOf(resultMap, Ordering.natural()));
+      return new SubstitutionResult(ImmutableSortedMap.copyOf(resultMap));
     }
 
     /** Creates a substitution result with one (variable, term) entry. */

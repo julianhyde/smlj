@@ -19,76 +19,46 @@
 package net.hydromatic.morel.type;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Ordering;
 
 import net.hydromatic.morel.ast.Op;
-import net.hydromatic.morel.util.Ord;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.function.UnaryOperator;
 import javax.annotation.Nonnull;
 
 /** Algebraic type. */
-public class DataType extends BaseType implements NamedType {
-  public final String name;
-  public final String moniker;
-  public final List<? extends Type> parameterTypes;
+public class DataType extends ParameterizedType {
   public final SortedMap<String, Type> typeConstructors;
 
   /** Creates a DataType.
    *
-   * <p>Called only from {@link TypeSystem#dataType(String, List, Map)}.
-   * If the {@code typeSystem} argument is specified, canonizes the types inside
-   * type-constructors. This also allows temporary types (necessary while
+   * <p>Called only from {@link TypeSystem#dataType(String, List, Map, Type)}.
+   *
+   * <p>If the {@code typeSystem} argument is specified, canonizes the types
+   * inside type-constructors. This also allows temporary types (necessary while
    * creating self-referential data types) to be replaced with real DataType
-   * instances. */
+   * instances.
+   *
+   * <p>During replacement, if a type matches {@code placeholderType} it is
+   * replaced with {@code this}. This allows cyclic graphs to be copied. */
   DataType(TypeSystem typeSystem, String name, String description,
       List<? extends Type> parameterTypes,
-      SortedMap<String, Type> typeConstructors) {
-    super(Op.DATA_TYPE, description);
-    this.name = Objects.requireNonNull(name);
-    this.moniker = computeMoniker(name, parameterTypes);
-    this.parameterTypes = ImmutableList.copyOf(parameterTypes);
+      SortedMap<String, Type> typeConstructors, Type placeholderType) {
+    super(Op.DATA_TYPE, name, computeMoniker(name, parameterTypes),
+        description, parameterTypes);
     if (typeSystem == null) {
       this.typeConstructors = ImmutableSortedMap.copyOf(typeConstructors);
     } else {
       this.typeConstructors = copyTypeConstructors(typeSystem, typeConstructors,
-          t -> (t instanceof TypeSystem.TemporaryType
-                && ((TypeSystem.TemporaryType) t).name().equals(name))
-            ? DataType.this
-            : t);
+          t -> t == placeholderType ? DataType.this : t);
     }
-    Preconditions.checkArgument(typeConstructors.comparator()
-        == Ordering.natural());
-  }
-
-  static String computeMoniker(String name, List<? extends Type> typeVars) {
-    if (typeVars.isEmpty()) {
-      return name;
-    }
-    final StringBuilder b = new StringBuilder();
-    if (typeVars.size() > 1) {
-      b.append('(');
-    }
-    Ord.forEach(typeVars, (t, i) -> {
-      if (i > 0) {
-        b.append(",");
-      }
-      if (t instanceof TupleType) {
-        b.append('(').append(t.moniker()).append(')');
-      } else {
-        b.append(t.moniker());
-      }
-    });
-    if (typeVars.size() > 1) {
-      b.append(')');
-    }
-    return b.append(' ').append(name).toString();
+    Preconditions.checkArgument(typeConstructors.comparator() == null
+        || typeConstructors.comparator() == Ordering.natural());
   }
 
   protected ImmutableSortedMap<String, Type> copyTypeConstructors(
@@ -112,15 +82,7 @@ public class DataType extends BaseType implements NamedType {
     return typeConstructors.equals(this.typeConstructors)
         ? this
         : new DataType(typeSystem, name, description, parameterTypes,
-            typeConstructors);
-  }
-
-  public String name() {
-    return name;
-  }
-
-  @Override public String moniker() {
-    return moniker;
+            typeConstructors, this);
   }
 
   static String computeDescription(Map<String, Type> tyCons) {
@@ -136,6 +98,38 @@ public class DataType extends BaseType implements NamedType {
       }
     });
     return buf.toString();
+  }
+
+  @Override public Type substitute(TypeSystem typeSystem, List<Type> types) {
+    // Create a copy of this datatype with type variables substituted with
+    // actual types.
+    if (types.equals(parameterTypes)) {
+      return this;
+    }
+    final String moniker = computeMoniker(name, types);
+    final Type lookup = typeSystem.lookupOpt(moniker);
+    if (lookup != null) {
+      return lookup;
+    }
+    assert types.size() == parameterTypes.size();
+    final TemporaryType temporaryType =
+        typeSystem.temporaryType(name, types, false);
+    final TypeShuttle typeVisitor = new TypeShuttle(typeSystem) {
+      @Override public Type visit(TypeVar typeVar) {
+        return types.get(typeVar.ordinal);
+      }
+
+      @Override public Type visit(DataType dataType) {
+        return dataType == DataType.this ? temporaryType
+            : super.visit(dataType);
+      }
+    };
+    final SortedMap<String, Type> typeConstructors = new TreeMap<>();
+    this.typeConstructors.forEach((tyConName, tyConType) ->
+        typeConstructors.put(tyConName,
+            tyConType.accept(typeVisitor)));
+    temporaryType.unregister(typeSystem);
+    return typeSystem.dataType(name, types, typeConstructors, temporaryType);
   }
 }
 

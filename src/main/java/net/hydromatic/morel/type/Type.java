@@ -20,6 +20,7 @@ package net.hydromatic.morel.type;
 
 import net.hydromatic.morel.ast.Op;
 
+import java.util.List;
 import java.util.function.UnaryOperator;
 
 /** Type. */
@@ -48,6 +49,16 @@ public interface Type {
   Type copy(TypeSystem typeSystem, UnaryOperator<Type> transform);
 
   <R> R accept(TypeVisitor<R> typeVisitor);
+
+  /** Returns a copy of this type, specialized by substituting type
+   * parameters. */
+  default Type substitute(TypeSystem typeSystem, List<Type> types) {
+    if (!types.isEmpty()) {
+      throw new IllegalArgumentException("too many type parameters, "
+          + types + " (expected 0)");
+    }
+    return this;
+  }
 }
 
 // End Type.java

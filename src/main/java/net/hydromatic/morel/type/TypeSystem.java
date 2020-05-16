@@ -29,6 +29,7 @@ import net.hydromatic.morel.util.ComparableSingletonList;
 import net.hydromatic.morel.util.Ord;
 import net.hydromatic.morel.util.Pair;
 
+import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -37,14 +38,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.SortedMap;
-import java.util.TreeMap;
 import java.util.function.Function;
-import java.util.function.UnaryOperator;
+import javax.annotation.Nullable;
 
 /** A table that contains all types in use, indexed by their description (e.g.
  * "{@code int -> int}"). */
 public class TypeSystem {
-  private final Map<String, Type> typeByName = new HashMap<>();
+  final Map<String, Type> typeByName = new HashMap<>();
 
   private final Map<String, Pair<DataType, Type>> typeConstructorByName =
       new HashMap<>();
@@ -146,34 +146,35 @@ public class TypeSystem {
 
   /** Creates a data type. */
   public DataType dataType(String name, List<? extends Type> types,
-      Map<String, Type> tyCons) {
-    final boolean allVars = types.stream().allMatch(t -> t instanceof TypeVar);
-    String moniker = DataType.computeMoniker(name, types);
-    final DataType dataType0 = (DataType) typeByName.computeIfAbsent(moniker,
+      Map<String, Type> tyCons, @Nullable Type placeholderType) {
+    final String moniker = DataType.computeMoniker(name, types);
+    return (DataType) typeByName.computeIfAbsent(moniker,
         moniker2 -> {
-          final DataType dataType;
           final String description = DataType.computeDescription(tyCons);
-          if (allVars) {
-            @SuppressWarnings("unchecked") final List<TypeVar> typeVars =
-                (List) types;
-            dataType = new PolymorphicDataType(TypeSystem.this, name,
-                description, ImmutableList.copyOf(typeVars),
-                ImmutableSortedMap.copyOf(tyCons));
-          } else {
-            dataType = new DataType(TypeSystem.this, name,
-                description, ImmutableList.copyOf(types),
-                ImmutableSortedMap.copyOf(tyCons));
-          }
+          final DataType dataType = new DataType(this, name,
+              description, ImmutableList.copyOf(types),
+              ImmutableSortedMap.copyOf(tyCons), placeholderType);
           tyCons.forEach((name3, type) ->
               typeConstructorByName.put(name3, Pair.of(dataType, type)));
           return dataType;
         });
-    if (allVars) {
-      // We have just created an entry for the moniker "'a option", so now
-      // create an entry for the name "option".
-      typeByName.putIfAbsent(name, dataType0);
+  }
+
+  /** Creates a data type scheme: a datatype if there are no type arguments
+   * (e.g. "{@code ordering}", or a forall type if there are type arguments
+   * (e.g. "{@code forall 'a . 'a option}". */
+  public Type dataTypeScheme(String name, List<TypeVar> typeParameters,
+      Map<String, Type> tyCons, @Nullable Type placeholderType) {
+    final DataType dataType =
+        dataType(name, typeParameters, tyCons, placeholderType);
+    if (typeParameters.isEmpty()) {
+      return dataType;
     }
-    return dataType0;
+    // We have just created an entry for the moniker (e.g. "'a option"), so
+    // now create an entry for the name "option".
+    final ForallType forallType = forallType(typeParameters, dataType);
+    typeByName.putIfAbsent(name, forallType);
+    return forallType;
   }
 
   /** Creates a record type, or returns a scalar type if {@code argNameTypes}
@@ -256,16 +257,9 @@ public class TypeSystem {
   }
 
   /** Creates a "forall" type. */
+  // TODO: change first arg to an int?
   public ForallType forallType(Iterable<TypeVar> typeVars, Type type) {
-    final StringBuilder b = new StringBuilder();
-    b.append("forall");
-    for (TypeVar typeVar : typeVars) {
-      b.append(' ').append(typeVar.moniker());
-    }
-    b.append(". ");
-    unparse(b, type, 0, 0);
-
-    final String description = b.toString();
+    final String description = ForallType.computeDescription(typeVars, type);
     return (ForallType) typeByName.computeIfAbsent(description,
         d -> new ForallType(d, ImmutableList.copyOf(typeVars), type));
   }
@@ -287,8 +281,8 @@ public class TypeSystem {
     return builder;
   }
 
-  private static StringBuilder unparse(StringBuilder builder, Type type,
-      int left, int right) {
+  static StringBuilder unparse(StringBuilder builder, Type type, int left,
+      int right) {
     final Op op = type.op();
     if (left > op.left || op.right < right) {
       return builder.append("(").append(type.moniker()).append(")");
@@ -301,10 +295,33 @@ public class TypeSystem {
    *
    * <p>(Temporary types exist for a brief period while defining a recursive
    * {@code datatype}.) */
-  public TemporaryType temporaryType(String name, List<TypeVar> typeVars) {
-    final TemporaryType temporaryType = new TemporaryType(this, name, typeVars);
-    typeByName.put(name, temporaryType);
+  public TemporaryType temporaryType(String name,
+      List<? extends Type> parameterTypes, boolean withScheme) {
+    final String moniker = DataType.computeMoniker(name, parameterTypes);
+    final TemporaryType temporaryType =
+        new TemporaryType(name, moniker, moniker, parameterTypes, withScheme);
+    typeByName.put(moniker, temporaryType);
+    if (withScheme && !parameterTypes.isEmpty()) {
+      final List<TypeVar> typeVars = typeVariables(parameterTypes.size());
+      final String description =
+          ForallType.computeDescription(typeVars, temporaryType);
+      typeByName.put(name,
+          new ForallType(description, ImmutableList.copyOf(typeVars),
+              temporaryType));
+    }
     return temporaryType;
+  }
+
+  private List<TypeVar> typeVariables(int size) {
+    return new AbstractList<TypeVar>() {
+      public int size() {
+        return size;
+      }
+
+      public TypeVar get(int index) {
+        return typeVariable(index);
+      }
+    };
   }
 
   public Pair<DataType, Type> lookupTyCon(String tyConName) {
@@ -318,29 +335,14 @@ public class TypeSystem {
   public Type apply(Type type, List<Type> types) {
     if (type instanceof TemporaryType) {
       final TemporaryType temporaryType = (TemporaryType) type;
-      if (types.equals(temporaryType.typeVars)) {
+      if (types.equals(temporaryType.parameterTypes)) {
         return type;
       }
       throw new AssertionError();
     }
-    if (type instanceof PolymorphicDataType) {
-      // Create a copy of the datatype with type variables substituted with
-      // actual types.
-      final PolymorphicDataType dataType = (PolymorphicDataType) type;
-      if (types.equals(dataType.parameterTypes)) {
-        return type;
-      }
-      assert types.size() == dataType.parameterTypes.size();
-      final TypeShuttle typeVisitor = new TypeShuttle(this) {
-        @Override public Type visit(TypeVar typeVar) {
-          return types.get(typeVar.ordinal);
-        }
-      };
-      final SortedMap<String, Type> typeConstructors = new TreeMap<>();
-      dataType.typeConstructors.forEach((tyConName, tyConType) ->
-          typeConstructors.put(tyConName,
-              tyConType.accept(typeVisitor)));
-      return dataType(dataType.name, types, typeConstructors);
+    if (type instanceof ForallType) {
+      final ForallType forallType = (ForallType) type;
+      return forallType.type.substitute(this, types);
     }
     final String description = ApplyType.computeDescription(type, types);
     return new ApplyType(type, ImmutableList.copyOf(types), description);
@@ -390,54 +392,6 @@ public class TypeSystem {
     @Override public Void visit(TypeVar typeVar) {
       vars.add(typeVar);
       return super.visit(typeVar);
-    }
-  }
-
-  /** Placeholder for a type that is being recursively defined.
-   *
-   * <p>For example, while defining datatype "list" as follows,
-   *
-   * <blockquote>
-   *   <code>datatype 'a list = NIL | CONS of ('a, 'a list)</code>
-   * </blockquote>
-   *
-   * <p>we define a temporary type "list", it is used in {@code CONS}, and
-   * later we convert it to the real data type "list".
-   */
-  public static class TemporaryType implements NamedType {
-    private final TypeSystem typeSystem;
-    private final String name;
-    public final List<TypeVar> typeVars;
-
-    private TemporaryType(TypeSystem typeSystem, String name,
-        List<TypeVar> typeVars) {
-      this.typeSystem = Objects.requireNonNull(typeSystem);
-      this.name = Objects.requireNonNull(name);
-      this.typeVars = ImmutableList.copyOf(typeVars);
-    }
-
-    @Override public String description() {
-      return name;
-    }
-
-    @Override public Op op() {
-      return Op.TEMPORARY_DATA_TYPE;
-    }
-
-    @Override public String name() {
-      return name;
-    }
-
-    public Type copy(TypeSystem typeSystem, UnaryOperator<Type> transform) {
-      return transform.apply(this);
-    }
-
-    public <R> R accept(TypeVisitor<R> typeVisitor) {
-      throw new UnsupportedOperationException();
-    }
-
-    public void delete() {
-      this.typeSystem.typeByName.remove(name);
     }
   }
 

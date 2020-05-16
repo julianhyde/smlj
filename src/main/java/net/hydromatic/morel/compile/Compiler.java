@@ -32,6 +32,7 @@ import net.hydromatic.morel.eval.EvalEnv;
 import net.hydromatic.morel.eval.Unit;
 import net.hydromatic.morel.type.Binding;
 import net.hydromatic.morel.type.DataType;
+import net.hydromatic.morel.type.ForallType;
 import net.hydromatic.morel.type.ListType;
 import net.hydromatic.morel.type.RecordType;
 import net.hydromatic.morel.type.Type;
@@ -458,8 +459,10 @@ public class Compiler {
       List<Action> actions) {
     for (Ast.DatatypeBind bind : datatypeDecl.binds) {
       final List<Binding> newBindings = new TailList<>(bindings);
+      final Type type = typeMap.typeSystem.lookup(bind.name.name);
       final DataType dataType =
-          (DataType) typeMap.typeSystem.lookup(bind.name.name);
+          (DataType) (type instanceof DataType ? type
+              : ((ForallType) type).type);
       for (Ast.TyCon tyCon : bind.tyCons) {
         bindings.add(typeMap.typeSystem.bindTyCon(dataType, tyCon.id.name));
       }

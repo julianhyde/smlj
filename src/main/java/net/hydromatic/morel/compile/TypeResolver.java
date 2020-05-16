@@ -37,6 +37,7 @@ import net.hydromatic.morel.type.ForallType;
 import net.hydromatic.morel.type.ListType;
 import net.hydromatic.morel.type.PrimitiveType;
 import net.hydromatic.morel.type.RecordType;
+import net.hydromatic.morel.type.TemporaryType;
 import net.hydromatic.morel.type.TupleType;
 import net.hydromatic.morel.type.Type;
 import net.hydromatic.morel.type.TypeSystem;
@@ -115,7 +116,7 @@ public class TypeResolver {
     final TypeEnv typeEnv = typeEnvs.typeEnv;
     final Map<Ast.IdPat, Unifier.Term> termMap = new LinkedHashMap<>();
     final Ast.Decl node2 = deduceDeclType(typeEnv, decl, termMap);
-    final boolean debug = true;
+    final boolean debug = false;
     final Unifier.Tracer tracer = debug
         ? Tracers.printTracer(System.out)
         : Tracers.nullTracer();
@@ -643,25 +644,28 @@ public class TypeResolver {
     for (Ast.TyVar tyVar : datatypeBind.tyVars) {
       typeVars.add((TypeVar) toType(tyVar));
     }
-    final TypeSystem.TemporaryType tempType =
-        typeSystem.temporaryType(datatypeBind.name.name, typeVars);
+    final TemporaryType temporaryType =
+        typeSystem.temporaryType(datatypeBind.name.name, typeVars, true);
     for (Ast.TyCon tyCon : datatypeBind.tyCons) {
       tyCons.put(tyCon.id.name,
           tyCon.type == null ? DummyType.INSTANCE : toType(tyCon.type));
     }
-    tempType.delete();
-    final DataType dataType =
-        typeSystem.dataType(datatypeBind.name.name, typeVars, tyCons);
+    temporaryType.unregister(typeSystem);
+    final Type type =
+        typeSystem.dataTypeScheme(datatypeBind.name.name, typeVars, tyCons,
+            temporaryType);
+    final DataType dataType = (DataType) (type instanceof DataType ? type
+        : ((ForallType) type).type);
     for (Ast.TyCon tyCon : datatypeBind.tyCons) {
-      final Type type;
+      final Type tyConType;
       if (tyCon.type != null) {
-        type = typeSystem.fnType(toType(tyCon.type), dataType);
+        tyConType = typeSystem.fnType(toType(tyCon.type), dataType);
       } else {
-        type = dataType;
+        tyConType = dataType;
       }
       termMap.put((Ast.IdPat) ast.idPat(tyCon.pos, tyCon.id.name),
-          toTerm(type, Subst.EMPTY));
-      map.put(tyCon, toTerm(type, Subst.EMPTY));
+          toTerm(tyConType, Subst.EMPTY));
+      map.put(tyCon, toTerm(tyConType, Subst.EMPTY));
     }
   }
 
@@ -1002,8 +1006,8 @@ public class TypeResolver {
       final DataType dataType = (DataType) type;
       return unifier.apply(dataType.name(), toTerms(dataType.parameterTypes, subst));
     case TEMPORARY_DATA_TYPE:
-      final TypeSystem.TemporaryType tempType = (TypeSystem.TemporaryType) type;
-      return unifier.apply(tempType.name(), toTerms(tempType.typeVars, subst));
+      final TemporaryType tempType = (TemporaryType) type;
+      return unifier.apply(tempType.name(), toTerms(tempType.parameterTypes, subst));
     case FUNCTION_TYPE:
       final FnType fnType = (FnType) type;
       return unifier.apply(FN_TY_CON, toTerm(fnType.paramType, subst),

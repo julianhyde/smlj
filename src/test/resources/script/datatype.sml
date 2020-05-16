@@ -94,16 +94,14 @@ height it;
 (*) Recursive
 datatype 'x tree = Empty | Node of 'x tree * 'x * 'x tree;
 fun max (x, y) = if x < y then y else x;
-(*
 fun height Empty = 0
   | height (Node (lft, _, rht)) = 1 + max (height lft, height rht);
 Empty;
 height it;
 Node(Empty, 1, Empty);
 height it;
-Node(Empty, 2, Node(Node(Empty, 3, Empty), Empty));
+Node(Empty, 2, Node(Node(Empty, 3, Empty), 4, Empty));
 height it;
-*)
 
 (*) Two type parameters
 datatype ('y, 'x) tree =
