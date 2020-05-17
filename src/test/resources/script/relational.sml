@@ -69,9 +69,7 @@ from e2 in (from e in emps yield #deptno e) yield e2 + 1;
 
 from e2 in (from e in emps yield e.deptno) yield e2 + 1;
 
-(* Disabled: '=' should have lower precedence than '#deptno e' fun application
 from e in emps where #deptno e = 30 yield #name e;
-*)
 
 from e in emps where false yield e.deptno;
 
@@ -85,22 +83,17 @@ yield
     p1 e.id
   end;
 
-(* Disabled due to CCE
 fun range i j =
   if i >= j then [] else i :: (range (i + 1) j);
-*)
 
-(* Disabled due to NPE in apply
 range 0 5;
 
 from i in range 0 5 where i mod 2 = 1 yield i;
-*)
-val integers = [0,1,2,3,4];
 
-from i in integers where i mod 2 = 1 yield i;
+from i in range 0 5 where i mod 2 = 1 yield i;
 
 (*) missing yield
-from i in integers where i mod 2 = 1;
+from i in range 0 5 where i mod 2 = 1;
 
 from e in emps where e.deptno = 30 yield e.id;
 
@@ -108,7 +101,7 @@ from e in emps where e.deptno = 30 yield e.id;
 from e in emps, e2 in emps yield e.name ^ "-" ^ e2.name;
 
 (*) cartesian product, missing yield
-from d in depts, i in integers;
+from d in depts, i in range 0 5;
 
 (*) join
 from e in emps, d in depts

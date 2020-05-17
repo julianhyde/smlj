@@ -30,6 +30,7 @@ import net.hydromatic.morel.util.Ord;
 import net.hydromatic.morel.util.Pair;
 
 import java.util.AbstractList;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -226,14 +227,10 @@ public class TypeSystem {
 
   /** Creates a "forall" type. */
   public Type forallType(int typeCount, Function<ForallHelper, Type> builder) {
-    final ImmutableList.Builder<TypeVar> typeVars = ImmutableList.builder();
-    for (int i = 0; i < typeCount; i++) {
-      typeVars.add(typeVariable(i));
-    }
-    final ImmutableList<TypeVar> typeVarList = typeVars.build();
+    final List<TypeVar> typeVars = typeVariables(typeCount);
     final ForallHelper helper = new ForallHelper() {
       public TypeVar get(int i) {
-        return typeVarList.get(i);
+        return typeVars.get(i);
       }
 
       public ListType list(int i) {
@@ -253,13 +250,13 @@ public class TypeSystem {
       }
     };
     final Type type = builder.apply(helper);
-    return forallType(typeVarList, type);
+    return forallType(typeVars, type);
   }
 
-  /** Creates a "forall" type. */
-  // TODO: change first arg to an int?
-  public ForallType forallType(Iterable<TypeVar> typeVars, Type type) {
+  /** Creates a "for all" type. */
+  public ForallType forallType(List<TypeVar> typeVars, Type type) {
     final String description = ForallType.computeDescription(typeVars, type);
+    assert typeVars.equals(typeVariables(typeVars.size()));
     return (ForallType) typeByName.computeIfAbsent(description,
         d -> new ForallType(d, ImmutableList.copyOf(typeVars), type));
   }
@@ -296,16 +293,18 @@ public class TypeSystem {
    * <p>(Temporary types exist for a brief period while defining a recursive
    * {@code datatype}.) */
   public TemporaryType temporaryType(String name,
-      List<? extends Type> parameterTypes, boolean withScheme) {
+      List<? extends Type> parameterTypes, Transaction transaction_,
+      boolean withScheme) {
     final String moniker = DataType.computeMoniker(name, parameterTypes);
     final TemporaryType temporaryType =
-        new TemporaryType(name, moniker, moniker, parameterTypes, withScheme);
-    typeByName.put(moniker, temporaryType);
+        new TemporaryType(name, moniker, moniker, parameterTypes);
+    final TransactionImpl transaction = (TransactionImpl) transaction_;
+    transaction.put(moniker, temporaryType);
     if (withScheme && !parameterTypes.isEmpty()) {
       final List<TypeVar> typeVars = typeVariables(parameterTypes.size());
       final String description =
           ForallType.computeDescription(typeVars, temporaryType);
-      typeByName.put(name,
+      transaction.put(name,
           new ForallType(description, ImmutableList.copyOf(typeVars),
               temporaryType));
     }
@@ -342,7 +341,9 @@ public class TypeSystem {
     }
     if (type instanceof ForallType) {
       final ForallType forallType = (ForallType) type;
-      return forallType.type.substitute(this, types);
+      try (Transaction transaction = transaction()) {
+        return forallType.type.substitute(this, types, transaction);
+      }
     }
     final String description = ApplyType.computeDescription(type, types);
     return new ApplyType(type, ImmutableList.copyOf(types), description);
@@ -383,6 +384,32 @@ public class TypeSystem {
     return forallType(collector.vars.size(), h ->
         type.copy(ts, t ->
             t instanceof TypeVar ? h.get(((TypeVar) t).ordinal) : t));
+  }
+
+  public TypeSystem.Transaction transaction() {
+    return new TransactionImpl();
+  }
+
+  /** Holds temporary changes to the type system. */
+  public interface Transaction extends AutoCloseable {
+    void close();
+  }
+
+  /** Implementation of {@link Transaction}. */
+  private class TransactionImpl implements Transaction {
+    final List<String> names = new ArrayList<>();
+
+    void put(String moniker, Type type) {
+      typeByName.put(moniker, Objects.requireNonNull(type));
+      names.add(moniker);
+    }
+
+    public void close() {
+      for (String name : names) {
+        typeByName.remove(name);
+      }
+      names.clear();
+    }
   }
 
   /** Visitor that finds all {@link TypeVar} instances within a {@link Type}. */

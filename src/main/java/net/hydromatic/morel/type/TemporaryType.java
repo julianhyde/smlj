@@ -35,12 +35,9 @@ import java.util.function.UnaryOperator;
  * later we convert it to the real data type "list".
  */
 public class TemporaryType extends ParameterizedType {
-  private final boolean withScheme;
-
   TemporaryType(String name, String moniker, String description,
-      List<? extends Type> parameterTypes, boolean withScheme) {
+      List<? extends Type> parameterTypes) {
     super(Op.TEMPORARY_DATA_TYPE, name, moniker, description, parameterTypes);
-    this.withScheme = withScheme;
   }
 
   public TemporaryType copy(TypeSystem typeSystem,
@@ -52,7 +49,8 @@ public class TemporaryType extends ParameterizedType {
     throw new UnsupportedOperationException();
   }
 
-  @Override public Type substitute(TypeSystem typeSystem, List<Type> types) {
+  @Override public Type substitute(TypeSystem typeSystem, List<Type> types,
+      TypeSystem.Transaction transaction) {
     // Create a copy of this temporary type with type variables substituted
     // with actual types.
     if (types.equals(parameterTypes)) {
@@ -64,15 +62,7 @@ public class TemporaryType extends ParameterizedType {
       return lookup;
     }
     assert types.size() == parameterTypes.size();
-    return typeSystem.temporaryType(name, types, false);
-  }
-
-  public void unregister(TypeSystem typeSystem) {
-    typeSystem.typeByName.remove(moniker);
-    if (withScheme && !name.equals(moniker)) {
-      typeSystem.typeByName.remove(name);
-      typeSystem.typeByName.remove("forall 'a. 'a tree");
-    }
+    return typeSystem.temporaryType(name, types, transaction, false);
   }
 }
 

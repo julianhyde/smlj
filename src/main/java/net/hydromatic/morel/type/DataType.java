@@ -100,7 +100,8 @@ public class DataType extends ParameterizedType {
     return buf.toString();
   }
 
-  @Override public Type substitute(TypeSystem typeSystem, List<Type> types) {
+  @Override public Type substitute(TypeSystem typeSystem, List<Type> types,
+      TypeSystem.Transaction transaction) {
     // Create a copy of this datatype with type variables substituted with
     // actual types.
     if (types.equals(parameterTypes)) {
@@ -112,23 +113,24 @@ public class DataType extends ParameterizedType {
       return lookup;
     }
     assert types.size() == parameterTypes.size();
-    final TemporaryType temporaryType =
-        typeSystem.temporaryType(name, types, false);
-    final TypeShuttle typeVisitor = new TypeShuttle(typeSystem) {
-      @Override public Type visit(TypeVar typeVar) {
-        return types.get(typeVar.ordinal);
-      }
-
-      @Override public Type visit(DataType dataType) {
-        return dataType == DataType.this ? temporaryType
-            : super.visit(dataType);
-      }
-    };
+    final TemporaryType temporaryType;
     final SortedMap<String, Type> typeConstructors = new TreeMap<>();
-    this.typeConstructors.forEach((tyConName, tyConType) ->
-        typeConstructors.put(tyConName,
-            tyConType.accept(typeVisitor)));
-    temporaryType.unregister(typeSystem);
+    try (TypeSystem.Transaction transaction2 = typeSystem.transaction()) {
+      temporaryType =
+          typeSystem.temporaryType(name, types, transaction2, false);
+      final TypeShuttle typeVisitor = new TypeShuttle(typeSystem) {
+        @Override public Type visit(TypeVar typeVar) {
+          return types.get(typeVar.ordinal);
+        }
+
+        @Override public Type visit(DataType dataType) {
+          return dataType == DataType.this ? temporaryType
+              : super.visit(dataType);
+        }
+      };
+      this.typeConstructors.forEach((tyConName, tyConType) ->
+          typeConstructors.put(tyConName, tyConType.accept(typeVisitor)));
+    }
     return typeSystem.dataType(name, types, typeConstructors, temporaryType);
   }
 }

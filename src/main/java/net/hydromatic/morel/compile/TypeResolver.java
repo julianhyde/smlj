@@ -644,13 +644,16 @@ public class TypeResolver {
     for (Ast.TyVar tyVar : datatypeBind.tyVars) {
       typeVars.add((TypeVar) toType(tyVar));
     }
-    final TemporaryType temporaryType =
-        typeSystem.temporaryType(datatypeBind.name.name, typeVars, true);
-    for (Ast.TyCon tyCon : datatypeBind.tyCons) {
-      tyCons.put(tyCon.id.name,
-          tyCon.type == null ? DummyType.INSTANCE : toType(tyCon.type));
+    final TemporaryType temporaryType;
+    try (TypeSystem.Transaction transaction = typeSystem.transaction()) {
+      temporaryType =
+          typeSystem.temporaryType(datatypeBind.name.name, typeVars,
+              transaction, true);
+      for (Ast.TyCon tyCon : datatypeBind.tyCons) {
+        tyCons.put(tyCon.id.name,
+            tyCon.type == null ? DummyType.INSTANCE : toType(tyCon.type));
+      }
     }
-    temporaryType.unregister(typeSystem);
     final Type type =
         typeSystem.dataTypeScheme(datatypeBind.name.name, typeVars, tyCons,
             temporaryType);
