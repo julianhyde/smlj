@@ -25,14 +25,16 @@ import com.google.common.collect.Lists;
 
 import net.hydromatic.morel.ast.Op;
 import net.hydromatic.morel.eval.Codes;
+import net.hydromatic.morel.type.Type.Key;
 import net.hydromatic.morel.util.ComparableSingletonList;
 import net.hydromatic.morel.util.Ord;
 import net.hydromatic.morel.util.Pair;
 
 import java.util.AbstractList;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -40,12 +42,15 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.function.Function;
-import javax.annotation.Nullable;
+import java.util.stream.Collector;
+
+import static net.hydromatic.morel.util.Static.toImmutableList;
 
 /** A table that contains all types in use, indexed by their description (e.g.
  * "{@code int -> int}"). */
 public class TypeSystem {
   final Map<String, Type> typeByName = new HashMap<>();
+  final Map<Key, Type> typeByKey = new HashMap<>();
 
   private final Map<String, Pair<DataType, Type>> typeConstructorByName =
       new HashMap<>();
@@ -69,10 +74,10 @@ public class TypeSystem {
   }
 
   private Type wrap(DataType dataType, Type type) {
-    @SuppressWarnings("UnstableApiUsage") final List<TypeVar> typeVars =
+    final List<TypeVar> typeVars =
         dataType.parameterTypes.stream().filter(t -> t instanceof TypeVar)
             .map(t -> (TypeVar) t)
-            .collect(ImmutableList.toImmutableList());
+            .collect(toImmutableList());
     return typeVars.isEmpty() ? type : forallType(typeVars, type);
   }
 
@@ -112,11 +117,8 @@ public class TypeSystem {
 
   /** Creates a function type. */
   public FnType fnType(Type paramType, Type resultType) {
-    final String description =
-        unparseList(new StringBuilder(), Op.FUNCTION_TYPE, 0, 0,
-            Arrays.asList(paramType, resultType)).toString();
-    return (FnType) typeByName.computeIfAbsent(description,
-        d -> new FnType(d, paramType, resultType));
+    final Key key = Keys.fn(paramType, resultType);
+    return (FnType) typeByKey.computeIfAbsent(key, Key::toType);
   }
 
   /** Creates a tuple type from an array of types. */
@@ -126,56 +128,90 @@ public class TypeSystem {
 
   /** Creates a tuple type. */
   public Type tupleType(List<? extends Type> argTypes) {
-    if (argTypes.isEmpty()) {
-      return PrimitiveType.UNIT;
-    }
-    final String description =
-        unparseList(new StringBuilder(), Op.TIMES, 0, 0, argTypes).toString();
-    return typeByName.computeIfAbsent(description,
-        d -> new TupleType(d, ImmutableList.copyOf(argTypes)));
+    final Key key = Keys.tuple(argTypes);
+    return typeByKey.computeIfAbsent(key, k -> k.toType());
   }
 
   /** Creates a list type. */
   public ListType listType(Type elementType) {
-    final String description =
-        unparse(new StringBuilder(), elementType, 0, Op.LIST.right)
-            .append(" list")
-            .toString();
-    return (ListType) typeByName.computeIfAbsent(description,
-        d -> new ListType(d, elementType));
+    final Key key = Keys.list(elementType);
+    return (ListType) typeByKey.computeIfAbsent(key, Key::toType);
   }
 
-  /** Creates a data type. */
-  public DataType dataType(String name, List<? extends Type> types,
-      Map<String, Type> tyCons, @Nullable Type placeholderType) {
-    final String moniker = DataType.computeMoniker(name, types);
-    return (DataType) typeByName.computeIfAbsent(moniker,
-        moniker2 -> {
-          final String description = DataType.computeDescription(tyCons);
-          final DataType dataType = new DataType(this, name,
-              description, ImmutableList.copyOf(types),
-              ImmutableSortedMap.copyOf(tyCons), placeholderType);
-          tyCons.forEach((name3, type) ->
-              typeConstructorByName.put(name3, Pair.of(dataType, type)));
-          return dataType;
-        });
+  /** Creates several data types simultaneously. */
+  public List<Type> dataTypes(List<Keys.DataTypeDef> defs) {
+    return dataTypes(defs, (type, typeMap) -> {
+      if (type instanceof DataType) {
+        final DataType dataType = (DataType) type;
+        dataType.typeConstructors =
+            DataType.copyTypeConstructors(this,
+                dataType.typeConstructors,
+                t -> t instanceof TemporaryType ? typeMap.get(t.key()) : t);
+      }
+    });
+  }
+
+  private List<Type> dataTypes(List<Keys.DataTypeDef> defs, DataTypeFixer fixer) {
+    final Map<Type.Key, Type> dataTypeMap = new LinkedHashMap<>();
+    defs.forEach(def -> {
+      final Key key;
+      final Type type;
+      if (def.scheme) {
+        key = Keys.name(def.name);
+        type = def.toType(this);
+        typeByName.put(def.name, type);
+        typeByKey.put(key, type);
+      } else {
+        key = Keys.apply((ParameterizedType) lookup(def.name), def.types);
+        type = typeByKey.computeIfAbsent(key, Key::toType);
+      }
+      dataTypeMap.put(key, type);
+    });
+    final ImmutableList.Builder<Type> types = ImmutableList.builder();
+    Pair.forEach(defs, dataTypeMap.values(), (def, dataType) -> {
+      fixer.apply(dataType, dataTypeMap);
+      if (def.scheme) {
+        if (!def.types.isEmpty() && false) {
+          // We have just created an entry for the moniker (e.g. "'a option"),
+          // so now create an entry for the name (e.g. "option").
+          final ForallType forallType = forallType((List) def.types, dataType);
+          typeByName.put(def.name, forallType);
+          types.add(forallType);
+        } else {
+          typeByName.put(def.name, dataType);
+          types.add(dataType);
+        }
+      } else {
+        types.add(dataType);
+      }
+    });
+    return types.build();
+  }
+
+  DataType dataType(String name, Key key, List<? extends Type> types,
+      SortedMap<String, Type> tyCons) {
+    final DataType dataType = new DataType(name, key,
+        ImmutableList.copyOf(types), ImmutableSortedMap.copyOf(tyCons));
+    tyCons.forEach((name3, type) ->
+        typeConstructorByName.put(name3, Pair.of(dataType, type)));
+    return dataType;
+  }
+
+  /** Replaces temporary data types with real data types, using the supplied
+   * map. */
+  @FunctionalInterface
+  private interface DataTypeFixer {
+    void apply(Type type, Map<Key, Type> typeMap);
   }
 
   /** Creates a data type scheme: a datatype if there are no type arguments
-   * (e.g. "{@code ordering}", or a forall type if there are type arguments
-   * (e.g. "{@code forall 'a . 'a option}". */
+   * (e.g. "{@code ordering}"), or a forall type if there are type arguments
+   * (e.g. "{@code forall 'a . 'a option}"). */
   public Type dataTypeScheme(String name, List<TypeVar> typeParameters,
-      Map<String, Type> tyCons, @Nullable Type placeholderType) {
-    final DataType dataType =
-        dataType(name, typeParameters, tyCons, placeholderType);
-    if (typeParameters.isEmpty()) {
-      return dataType;
-    }
-    // We have just created an entry for the moniker (e.g. "'a option"), so
-    // now create an entry for the name "option".
-    final ForallType forallType = forallType(typeParameters, dataType);
-    typeByName.putIfAbsent(name, forallType);
-    return forallType;
+      SortedMap<String, Type> tyCons) {
+    final Keys.DataTypeDef def =
+        Keys.dataTypeDef(name, typeParameters, tyCons, true);
+    return dataTypes(ImmutableList.of(def)).get(0);
   }
 
   /** Creates a record type, or returns a scalar type if {@code argNameTypes}
@@ -196,22 +232,14 @@ public class TypeSystem {
     if (argNameTypes.isEmpty()) {
       return PrimitiveType.UNIT;
     }
-    final StringBuilder builder = new StringBuilder("{");
     final ImmutableSortedMap<String, Type> argNameTypes2 =
         ImmutableSortedMap.copyOfSorted(argNameTypes);
-    argNameTypes2.forEach((name, type) -> {
-      if (builder.length() > 1) {
-        builder.append(", ");
-      }
-      builder.append(name).append(':').append(type.moniker());
-    });
     if (areContiguousIntegers(argNameTypes2.keySet())
         && argNameTypes2.size() != 1) {
       return tupleType(ImmutableList.copyOf(argNameTypes2.values()));
     }
-    final String description = builder.append('}').toString();
-    return this.typeByName.computeIfAbsent(description,
-        d -> new RecordType(d, argNameTypes2));
+    final Key key = Keys.record(argNameTypes2);
+    return this.typeByKey.computeIfAbsent(key, Key::toType);
   }
 
   /** Returns whether the collection is ["1", "2", ... n]. */
@@ -255,14 +283,13 @@ public class TypeSystem {
 
   /** Creates a "for all" type. */
   public ForallType forallType(List<TypeVar> typeVars, Type type) {
-    final String description = ForallType.computeDescription(typeVars, type);
+    final Key key = Keys.forall(type, typeVars);
     assert typeVars.equals(typeVariables(typeVars.size()));
-    return (ForallType) typeByName.computeIfAbsent(description,
-        d -> new ForallType(d, ImmutableList.copyOf(typeVars), type));
+    return (ForallType) typeByKey.computeIfAbsent(key, Key::toType);
   }
 
-  private static StringBuilder unparseList(StringBuilder builder, Op op,
-      int left, int right, List<? extends Type> argTypes) {
+  static StringBuilder unparseList(StringBuilder builder, Op op, int left,
+      int right, Collection<? extends Type> argTypes) {
     Ord.forEach(argTypes, (e, i) -> {
       if (i == 0) {
         unparse(builder, e, left, op.left);
@@ -297,16 +324,13 @@ public class TypeSystem {
       boolean withScheme) {
     final String moniker = DataType.computeMoniker(name, parameterTypes);
     final TemporaryType temporaryType =
-        new TemporaryType(name, moniker, moniker, parameterTypes);
+        new TemporaryType(name, moniker, parameterTypes);
     final TransactionImpl transaction = (TransactionImpl) transaction_;
     transaction.put(moniker, temporaryType);
     if (withScheme && !parameterTypes.isEmpty()) {
       final List<TypeVar> typeVars = typeVariables(parameterTypes.size());
-      final String description =
-          ForallType.computeDescription(typeVars, temporaryType);
       transaction.put(name,
-          new ForallType(description, ImmutableList.copyOf(typeVars),
-              temporaryType));
+          new ForallType(ImmutableList.copyOf(typeVars), temporaryType));
     }
     return temporaryType;
   }
@@ -345,15 +369,19 @@ public class TypeSystem {
         return forallType.type.substitute(this, types, transaction);
       }
     }
-    final String description = ApplyType.computeDescription(type, types);
-    return new ApplyType(type, ImmutableList.copyOf(types), description);
+    if (type instanceof DataType) {
+      final DataType dataType = (DataType) type;
+      try (Transaction transaction = transaction()) {
+        return dataType.substitute(this, types, transaction);
+      }
+    }
+    return new ApplyType((ParameterizedType) type, ImmutableList.copyOf(types));
   }
 
   /** Creates a type variable. */
   public TypeVar typeVariable(int ordinal) {
-    final String description = "'#" + ordinal;
-    return (TypeVar) typeByName.computeIfAbsent(description,
-        d -> new TypeVar(ordinal));
+    final Key key = Keys.ordinal(ordinal);
+    return (TypeVar) typeByKey.computeIfAbsent(key, Key::toType);
   }
 
   /** Creates an "option" type.

@@ -16,6 +16,5 @@
  * language governing permissions and limitations under the
  * License.
  *)
-"this is a simple script; modify it for debugging test cases";
-
+Option;
 (*) End dummy.sml

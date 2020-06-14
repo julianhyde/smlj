@@ -27,10 +27,14 @@ public class FnType extends BaseType {
   public final Type paramType;
   public final Type resultType;
 
-  FnType(String description, Type paramType, Type resultType) {
-    super(Op.FUNCTION_TYPE, description);
+  FnType(Type paramType, Type resultType) {
+    super(Op.FUNCTION_TYPE);
     this.paramType = paramType;
     this.resultType = resultType;
+  }
+
+  public Key key() {
+    return Keys.fn(paramType, resultType);
   }
 
   public <R> R accept(TypeVisitor<R> typeVisitor) {

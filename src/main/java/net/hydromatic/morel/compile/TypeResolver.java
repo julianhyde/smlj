@@ -34,6 +34,7 @@ import net.hydromatic.morel.type.DataType;
 import net.hydromatic.morel.type.DummyType;
 import net.hydromatic.morel.type.FnType;
 import net.hydromatic.morel.type.ForallType;
+import net.hydromatic.morel.type.Keys;
 import net.hydromatic.morel.type.ListType;
 import net.hydromatic.morel.type.PrimitiveType;
 import net.hydromatic.morel.type.RecordType;
@@ -47,10 +48,10 @@ import net.hydromatic.morel.util.MapList;
 import net.hydromatic.morel.util.MartelliUnifier;
 import net.hydromatic.morel.util.Ord;
 import net.hydromatic.morel.util.Pair;
+import net.hydromatic.morel.util.Static;
 import net.hydromatic.morel.util.Tracers;
 import net.hydromatic.morel.util.Unifier;
 
-import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -60,6 +61,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.NavigableSet;
 import java.util.Objects;
+import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.BiConsumer;
@@ -67,6 +69,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static net.hydromatic.morel.ast.AstBuilder.ast;
+import static net.hydromatic.morel.util.Static.skip;
 import static net.hydromatic.morel.util.Static.toImmutableList;
 
 /** Resolves the type of an expression. */
@@ -86,9 +89,7 @@ public class TypeResolver {
   static final String LIST_TY_CON = "list";
   static final String RECORD_TY_CON = "record";
   static final String FN_TY_CON = "fn";
-  private static final String APPLY_TY_CON = "apply";
-  private static final String[] INT_STRINGS =
-      {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"};
+  static final String APPLY_TY_CON = "apply";
 
   private TypeResolver(TypeSystem typeSystem) {
     this.typeSystem = Objects.requireNonNull(typeSystem);
@@ -491,13 +492,6 @@ public class TypeResolver {
     return unifier.apply(TUPLE_TY_CON, types);
   }
 
-  /** Converts an integer to its string representation, using a cached value
-   * if possible. */
-  private static String str(int i) {
-    return i >= 0 && i < INT_STRINGS.length ? INT_STRINGS[i]
-        : Integer.toString(i);
-  }
-
   private Ast.RecordSelector deduceRecordSelectorType(TypeEnv env,
       Unifier.Variable vResult, Unifier.Variable vArg,
       Ast.RecordSelector recordSelector) {
@@ -528,17 +522,10 @@ public class TypeResolver {
       return ImmutableList.of();
     } else if (sequence.operator.startsWith(RECORD_TY_CON + ":")) {
       final String[] fields = sequence.operator.split(":");
-      return Arrays.asList(fields).subList(1, fields.length);
+      return skip(1, Arrays.asList(fields));
     } else if (sequence.operator.equals(TUPLE_TY_CON)) {
-      return new AbstractList<String>() {
-        public int size() {
-          return sequence.terms.size();
-        }
-
-        public String get(int index) {
-          return str(index + 1);
-        }
-      };
+      final int size = sequence.terms.size();
+      return TupleType.ordinalNames(size);
     } else {
       return null;
     }
@@ -612,16 +599,61 @@ public class TypeResolver {
 
     case DATATYPE_DECL:
       final Ast.DatatypeDecl datatypeDecl = (Ast.DatatypeDecl) node;
-      for (Ast.DatatypeBind datatypeBind : datatypeDecl.binds) {
-        deduceDatatypeBindType(env, datatypeBind, termMap);
-      }
-      map.put(node, toTerm(PrimitiveType.UNIT));
-      return node;
+      return deduceDataTypeDeclType(env, datatypeDecl, termMap);
 
     default:
       throw new AssertionError("cannot deduce type for " + node.op + " ["
           + node + "]");
     }
+  }
+
+  private Ast.Decl deduceDataTypeDeclType(TypeEnv env,
+      Ast.DatatypeDecl datatypeDecl,
+      Map<Ast.IdPat, Unifier.Term> termMap) {
+    final List<DatatypeBindWorkspace> workspaces = new ArrayList<>();
+    try (TypeSystem.Transaction transaction = typeSystem.transaction()) {
+      for (Ast.DatatypeBind datatypeBind : datatypeDecl.binds) {
+        final List<TypeVar> typeVars = new ArrayList<>();
+        for (Ast.TyVar tyVar : datatypeBind.tyVars) {
+          typeVars.add((TypeVar) toType(tyVar));
+        }
+        final TemporaryType temporaryType =
+            typeSystem.temporaryType(datatypeBind.name.name, typeVars,
+                transaction, true);
+        workspaces.add(new DatatypeBindWorkspace(temporaryType));
+      }
+      Pair.forEach(datatypeDecl.binds, workspaces, (datatypeBind, workspace) ->
+          deduceDatatypeBindType(env, datatypeBind, termMap,
+              workspace));
+    }
+
+    final List<Keys.DataTypeDef> defs = new ArrayList<>();
+    Pair.forEach(datatypeDecl.binds, workspaces, (datatypeBind, workspace) ->
+        defs.add(
+            Keys.dataTypeDef(datatypeBind.name.name,
+                workspace.temporaryType.parameterTypes, workspace.tyCons,
+                true)));
+    final List<Type> types = typeSystem.dataTypes(defs);
+
+    Pair.forEach(datatypeDecl.binds, types, (datatypeBind, type) -> {
+      final DataType dataType =
+          (DataType) (type instanceof DataType ? type
+              : ((ForallType) type).type);
+      for (Ast.TyCon tyCon : datatypeBind.tyCons) {
+        final Type tyConType;
+        if (tyCon.type != null) {
+          tyConType = typeSystem.fnType(toType(tyCon.type), dataType);
+        } else {
+          tyConType = dataType;
+        }
+        termMap.put((Ast.IdPat) ast.idPat(tyCon.pos, tyCon.id.name),
+            toTerm(tyConType, Subst.EMPTY));
+        map.put(tyCon, toTerm(tyConType, Subst.EMPTY));
+      }
+    });
+
+    map.put(datatypeDecl, toTerm(PrimitiveType.UNIT));
+    return datatypeDecl;
   }
 
   private Ast.Decl deduceValDeclType(TypeEnv env, Ast.ValDecl valDecl,
@@ -637,38 +669,23 @@ public class TypeResolver {
     return node2;
   }
 
-  private void deduceDatatypeBindType(TypeEnv env,
-      Ast.DatatypeBind datatypeBind, Map<Ast.IdPat, Unifier.Term> termMap) {
-    final Map<String, Type> tyCons = new TreeMap<>();
-    final List<TypeVar> typeVars = new ArrayList<>();
-    for (Ast.TyVar tyVar : datatypeBind.tyVars) {
-      typeVars.add((TypeVar) toType(tyVar));
-    }
+  /** Workspace used while handling several datatype binds simultaneously. */
+  private static class DatatypeBindWorkspace {
     final TemporaryType temporaryType;
-    try (TypeSystem.Transaction transaction = typeSystem.transaction()) {
-      temporaryType =
-          typeSystem.temporaryType(datatypeBind.name.name, typeVars,
-              transaction, true);
-      for (Ast.TyCon tyCon : datatypeBind.tyCons) {
-        tyCons.put(tyCon.id.name,
-            tyCon.type == null ? DummyType.INSTANCE : toType(tyCon.type));
-      }
+    final SortedMap<String, Type> tyCons = new TreeMap<>();
+    public Type type;
+
+    private DatatypeBindWorkspace(TemporaryType temporaryType) {
+      this.temporaryType = temporaryType;
     }
-    final Type type =
-        typeSystem.dataTypeScheme(datatypeBind.name.name, typeVars, tyCons,
-            temporaryType);
-    final DataType dataType = (DataType) (type instanceof DataType ? type
-        : ((ForallType) type).type);
+  }
+
+  private void deduceDatatypeBindType(TypeEnv env,
+      Ast.DatatypeBind datatypeBind, Map<Ast.IdPat, Unifier.Term> termMap,
+      DatatypeBindWorkspace w) {
     for (Ast.TyCon tyCon : datatypeBind.tyCons) {
-      final Type tyConType;
-      if (tyCon.type != null) {
-        tyConType = typeSystem.fnType(toType(tyCon.type), dataType);
-      } else {
-        tyConType = dataType;
-      }
-      termMap.put((Ast.IdPat) ast.idPat(tyCon.pos, tyCon.id.name),
-          toTerm(tyConType, Subst.EMPTY));
-      map.put(tyCon, toTerm(tyConType, Subst.EMPTY));
+      w.tyCons.put(tyCon.id.name,
+          tyCon.type == null ? DummyType.INSTANCE : toType(tyCon.type));
     }
   }
 
@@ -684,9 +701,8 @@ public class TypeResolver {
       if (namedType.types.isEmpty()) {
         return genericType;
       }
-      //noinspection UnstableApiUsage
       final List<Type> typeList = namedType.types.stream().map(this::toType)
-          .collect(ImmutableList.toImmutableList());
+          .collect(toImmutableList());
       return typeSystem.apply(genericType, typeList);
 
     case TY_VAR:
@@ -1018,6 +1034,9 @@ public class TypeResolver {
     case APPLY_TYPE:
       final ApplyType applyType = (ApplyType) type;
       final Unifier.Term term = toTerm(applyType.type, subst);
+//      if (TypeVar.is123(applyType.types)) {
+//        return term;
+//      }
       final List<Unifier.Term> terms = toTerms(applyType.types, subst);
       return unifier.apply(APPLY_TY_CON, ConsList.of(term, terms));
     case TUPLE_TYPE:

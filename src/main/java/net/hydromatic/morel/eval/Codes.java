@@ -44,6 +44,7 @@ import net.hydromatic.morel.type.TypeSystem;
 import net.hydromatic.morel.util.MapList;
 import net.hydromatic.morel.util.Ord;
 import net.hydromatic.morel.util.Pair;
+import net.hydromatic.morel.util.Static;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -59,6 +60,7 @@ import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 
 import static net.hydromatic.morel.ast.AstBuilder.ast;
+import static net.hydromatic.morel.util.Static.toImmutableList;
 
 /** Helpers for {@link Code}. */
 public abstract class Codes {
@@ -413,9 +415,8 @@ public abstract class Codes {
   /** Creates a {@link RowSink} for a {@code order} clause. */
   public static RowSink orderRowSink(ImmutableList<Pair<Code, Boolean>> codes,
       ImmutableList<Binding> bindings, RowSink rowSink) {
-    @SuppressWarnings("UnstableApiUsage")
     final ImmutableList<String> labels = bindings.stream().map(b -> b.name)
-        .collect(ImmutableList.toImmutableList());
+        .collect(toImmutableList());
     return new OrderRowSink(codes, labels, rowSink);
   }
 
@@ -1352,6 +1353,9 @@ public abstract class Codes {
   private static final Applicable VECTOR_COLLATE = LIST_COLLATE;
 
   private static void populateBuiltIns(Map<String, Object> valueMap) {
+    if (Static.SKIP) {
+      return;
+    }
     // Dummy type system, thrown away after this method
     final TypeSystem typeSystem = new TypeSystem();
     BuiltIn.dataTypes(typeSystem, new ArrayList<>());
@@ -1367,12 +1371,11 @@ public abstract class Codes {
         valueMap.put(key.alias, value);
       }
     });
-    //noinspection UnstableApiUsage
     BuiltIn.forEachStructure(typeSystem, (structure, type) ->
         valueMap.put(structure.name,
             structure.memberMap.values().stream()
                 .map(BUILT_IN_VALUES::get)
-                .collect(ImmutableList.toImmutableList())));
+                .collect(toImmutableList())));
   }
 
   /** Creates an empty evaluation environment. */

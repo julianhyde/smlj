@@ -35,8 +35,8 @@ public enum PrimitiveType implements Type {
   /** The name in the language, e.g. {@code bool}. */
   public final String moniker = name().toLowerCase(Locale.ROOT);
 
-  public String description() {
-    return moniker;
+  public Key key() {
+    return Keys.name(moniker);
   }
 
   public Op op() {

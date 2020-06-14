@@ -18,7 +18,11 @@
  */
 package net.hydromatic.morel.compile;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+
 import net.hydromatic.morel.foreign.RelList;
+import net.hydromatic.morel.type.ApplyType;
 import net.hydromatic.morel.type.DataType;
 import net.hydromatic.morel.type.ForallType;
 import net.hydromatic.morel.type.ListType;
@@ -30,6 +34,7 @@ import net.hydromatic.morel.util.Ord;
 import net.hydromatic.morel.util.Pair;
 
 import java.util.List;
+import java.util.Map;
 import javax.annotation.Nonnull;
 
 /** Prints values. */
@@ -55,7 +60,7 @@ class Pretty {
       int[] lineEnd, int depth, @Nonnull Type type, @Nonnull Object value) {
     final int start = buf.length();
     final int end = lineEnd[0];
-    pretty2(buf, indent, lineEnd, depth, type, value);
+    pretty2(buf, indent, lineEnd, depth, type, ImmutableList.of(), value);
     if (buf.length() > end) {
       // Reset to start, remove trailing whitespace, add newline
       buf.setLength(start);
@@ -70,7 +75,7 @@ class Pretty {
 
       lineEnd[0] = buf.length() + LINE_LENGTH;
       indent(buf, indent);
-      pretty2(buf, indent, lineEnd, depth, type, value);
+      pretty2(buf, indent, lineEnd, depth, type, ImmutableList.of(), value);
     }
     return buf;
   }
@@ -118,8 +123,8 @@ class Pretty {
   }
 
   private static StringBuilder pretty2(@Nonnull StringBuilder buf,
-      int indent, int[] lineEnd, int depth,
-      @Nonnull Type type, @Nonnull Object value) {
+      int indent, int[] lineEnd, int depth, @Nonnull Type type,
+      List<? extends Type> argTypes, @Nonnull Object value) {
     if (value instanceof TypedVal) {
       final TypedVal typedVal = (TypedVal) value;
       pretty1(buf, indent, lineEnd, depth + 1, PrimitiveType.BOOL,
@@ -222,7 +227,12 @@ class Pretty {
 
     case FORALL_TYPE:
       return pretty2(buf, indent, lineEnd, depth + 1, ((ForallType) type).type,
-          value);
+          ImmutableList.of(), value);
+
+    case APPLY_TYPE:
+      final ApplyType applyType = (ApplyType) type;
+      return pretty2(buf, indent, lineEnd, depth + 1, applyType.type,
+          applyType.types, value);
 
     case DATA_TYPE:
       final DataType dataType = (DataType) type;
@@ -238,7 +248,8 @@ class Pretty {
       if (list.size() == 2) {
         final Object arg = list.get(1);
         buf.append(' ');
-        pretty2(buf, indent, lineEnd, depth + 1, typeConArgType, arg);
+        pretty2(buf, indent, lineEnd, depth + 1, typeConArgType,
+            ImmutableList.of(), arg);
       }
       return buf;
 

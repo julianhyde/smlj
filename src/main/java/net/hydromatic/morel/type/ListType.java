@@ -27,9 +27,17 @@ import java.util.function.UnaryOperator;
 public class ListType extends BaseType {
   public final Type elementType;
 
-  ListType(String description, Type elementType) {
-    super(Op.LIST, description);
+  ListType(Type elementType) {
+    super(Op.LIST);
     this.elementType = Objects.requireNonNull(elementType);
+  }
+
+  @Override public Key key() {
+    return Keys.list(elementType);
+  }
+
+  @Override public String toString() {
+    return key().toString();
   }
 
   public <R> R accept(TypeVisitor<R> typeVisitor) {

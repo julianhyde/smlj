@@ -77,6 +77,22 @@ in
   (r.a "x", r.b)
 end;
 
+(*) A datatype whose constructor overwrites another datatype's constructor
+datatype foo = W | X | Y of int;
+X;
+Y;
+Y 0;
+datatype bar = X of int | Y of int * bool | Z;
+X;
+Y;
+Y (1, true);
+Z;
+
+(*) The following is syntax error:
+(*
+datatype bar = X of int | Y of (int, bool) | Z;
+*)
+
 (*) A recursive type, without generics
 datatype inttree = Empty | Node of inttree * int * inttree;
 fun max (x, y) = if x < y then y + 0 else x;
@@ -107,16 +123,16 @@ height it;
 datatype ('y, 'x) tree =
    Empty
  | Node of ('y, 'x) tree * 'x * 'y * ('y, 'x) tree;
+Empty;
+Node (Empty, true, "yes", Empty);
 
 (*) Mutually recursive
-(*  disabled - need generics
-datatype 'a tree = Empty | Node of 'a * 'a forest
+datatype 'a tree = Emptyx | Node of 'a * 'a forest
 and      'a forest = Nil | Cons of 'a tree * 'a forest;
-Empty;
+Emptyx;
 Nil;
 Node (1, Nil);
-Node (1, Cons (Empty, Nil));
-*)
+Node (1, Cons (Emptyx, Nil));
 
 (*) Parentheses are required for 2 or more type parameters,
 (*) optional for 1 type parameter,

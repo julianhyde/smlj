@@ -380,22 +380,22 @@ public class MainTest {
 
   /** Tests the name of {@link TypeVar}. */
   @Test public void testTypeVarName() {
-    assertError(() -> new TypeVar(-1).description(),
+    assertError(() -> new TypeVar(-1).key(),
         throwsA(IllegalArgumentException.class, nullValue()));
-    assertThat(new TypeVar(0).description(), is("'a"));
-    assertThat(new TypeVar(1).description(), is("'b"));
-    assertThat(new TypeVar(2).description(), is("'c"));
-    assertThat(new TypeVar(25).description(), is("'z"));
-    assertThat(new TypeVar(26).description(), is("'ba"));
-    assertThat(new TypeVar(27).description(), is("'bb"));
-    assertThat(new TypeVar(51).description(), is("'bz"));
-    assertThat(new TypeVar(52).description(), is("'ca"));
-    assertThat(new TypeVar(53).description(), is("'cb"));
-    assertThat(new TypeVar(26 * 26 - 1).description(), is("'zz"));
-    assertThat(new TypeVar(26 * 26).description(), is("'baa"));
-    assertThat(new TypeVar(27 * 26 - 1).description(), is("'baz"));
-    assertThat(new TypeVar(26 * 26 * 26 - 1).description(), is("'zzz"));
-    assertThat(new TypeVar(26 * 26 * 26).description(), is("'baaa"));
+    assertThat(new TypeVar(0).toString(), is("'a"));
+    assertThat(new TypeVar(1).toString(), is("'b"));
+    assertThat(new TypeVar(2).toString(), is("'c"));
+    assertThat(new TypeVar(25).toString(), is("'z"));
+    assertThat(new TypeVar(26).toString(), is("'ba"));
+    assertThat(new TypeVar(27).toString(), is("'bb"));
+    assertThat(new TypeVar(51).toString(), is("'bz"));
+    assertThat(new TypeVar(52).toString(), is("'ca"));
+    assertThat(new TypeVar(53).toString(), is("'cb"));
+    assertThat(new TypeVar(26 * 26 - 1).toString(), is("'zz"));
+    assertThat(new TypeVar(26 * 26).toString(), is("'baa"));
+    assertThat(new TypeVar(27 * 26 - 1).toString(), is("'baz"));
+    assertThat(new TypeVar(26 * 26 * 26 - 1).toString(), is("'zzz"));
+    assertThat(new TypeVar(26 * 26 * 26).toString(), is("'baaa"));
   }
 
   @Test public void testType() {

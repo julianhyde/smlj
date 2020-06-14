@@ -30,6 +30,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiConsumer;
 
+import static net.hydromatic.morel.util.Static.skip;
+
 /** Helpers for {@link EvalEnv}. */
 public class EvalEnvs {
   /** Creates an evaluation environment with the given (name, value) map. */
@@ -251,7 +253,7 @@ public class EvalEnvs {
           return false;
         }
         final Object head = consValue.get(0);
-        final List<Object> tail = consValue.subList(1, consValue.size());
+        final List<Object> tail = skip(1, consValue);
         return bindRecurse(infixPat.p0, head)
             && bindRecurse(infixPat.p1, tail);
 

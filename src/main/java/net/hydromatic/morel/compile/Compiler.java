@@ -38,6 +38,7 @@ import net.hydromatic.morel.type.RecordType;
 import net.hydromatic.morel.type.Type;
 import net.hydromatic.morel.util.Ord;
 import net.hydromatic.morel.util.Pair;
+import net.hydromatic.morel.util.Static;
 import net.hydromatic.morel.util.TailList;
 
 import java.math.BigDecimal;
@@ -52,6 +53,7 @@ import java.util.function.Supplier;
 
 import static net.hydromatic.morel.ast.Ast.Direction.DESC;
 import static net.hydromatic.morel.ast.AstBuilder.ast;
+import static net.hydromatic.morel.util.Static.skip;
 import static net.hydromatic.morel.util.Static.toImmutableList;
 
 /** Compiles an expression to code that can be evaluated. */
@@ -240,8 +242,7 @@ public class Compiler {
         outBindingBuilder::add);
     final ImmutableList<Binding> outBindings = outBindingBuilder.build();
     final Supplier<Codes.RowSink> nextFactory =
-        createRowSinkFactory(env, outBindings,
-            steps.subList(1, steps.size()), yieldExp);
+        createRowSinkFactory(env, outBindings, Static.skip(1, steps), yieldExp);
     switch (firstStep.op) {
     case WHERE:
       final Ast.Where where = (Ast.Where) firstStep;
@@ -303,9 +304,7 @@ public class Compiler {
   }
 
   private ImmutableList<String> bindingNames(List<Binding> bindings) {
-    //noinspection UnstableApiUsage
-    return bindings.stream().map(b -> b.name)
-        .collect(ImmutableList.toImmutableList());
+    return bindings.stream().map(b -> b.name).collect(toImmutableList());
   }
 
   private void assignSelector(Ast.Apply apply) {
@@ -399,7 +398,7 @@ public class Compiler {
       return ast.let(e.pos, decls, e);
     } else {
       return ast.let(e.pos, decls.subList(0, 1),
-          flattenLet(decls.subList(1, decls.size()), e));
+          flattenLet(skip(1, decls), e));
     }
   }
 
@@ -470,8 +469,11 @@ public class Compiler {
         final List<Binding> immutableBindings =
             ImmutableList.copyOf(newBindings);
         actions.add((output, outBindings, evalEnv) -> {
-          output.add("datatype " + dataType.moniker + " = "
-              + dataType.description());
+          final StringBuilder buf =
+              new StringBuilder().append("datatype ")
+                  .append(dataType.moniker).append(" = ");
+          dataType.def().describe(buf);
+          output.add(buf.toString());
           outBindings.addAll(immutableBindings);
         });
       }
@@ -516,11 +518,10 @@ public class Compiler {
    */
   private Code compileMatchList(Environment env,
       List<Ast.Match> matchList) {
-    @SuppressWarnings("UnstableApiUsage")
     final ImmutableList<Pair<Ast.Pat, Code>> patCodes =
         matchList.stream()
             .map(match -> compileMatch(env, match))
-            .collect(ImmutableList.toImmutableList());
+            .collect(toImmutableList());
     return evalEnv -> new Closure(evalEnv, patCodes);
   }
 

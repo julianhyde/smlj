@@ -20,6 +20,8 @@ package net.hydromatic.morel.util;
 
 import com.google.common.collect.ImmutableList;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collector;
 
 /**
@@ -28,6 +30,14 @@ import java.util.stream.Collector;
 public class Static {
   private Static() {
   }
+
+  /** Whether to skip built-in functions.
+   *
+   * <p>To skip built-in functions, add "-DskipMorelBuiltIns" java's
+   * command-line arguments. */
+  public static final boolean SKIP =
+      getBooleanProperty("skipMorelBuiltIns", false);
+
   /**
    * Returns a {@code Collector} that accumulates the input elements into a
    * Guava {@link ImmutableList} via a {@link ImmutableList.Builder}.
@@ -48,6 +58,32 @@ public class Static {
           return t;
         },
         ImmutableList.Builder::build);
+  }
+
+  /** Returns the value of a system property, converted into a boolean value.
+   *
+   * <p>Values "", "true", "TRUE" and "1" are treated as true;
+   * "false", "FALSE" and "0" treated as false;
+   * for {@code null} and other values, returns {@code defaultVal}.
+   */
+  @SuppressWarnings("SimplifiableConditionalExpression")
+  private static boolean getBooleanProperty(String prop, boolean defaultVal) {
+    final String value = System.getProperty(prop);
+    if (value == null) {
+      return defaultVal;
+    }
+    final String low = value.toLowerCase(Locale.ROOT);
+    return low.equals("true") || low.equals("1") || low.isEmpty() ? true
+        : low.equals("false") || low.equals("0") ? false
+        : defaultVal;
+  }
+
+  public static <E> List<E> skip(List<E> list) {
+    return skip(1, list);
+  }
+
+  public static <E> List<E> skip(int count, List<E> list) {
+    return list.subList(count, list.size());
   }
 }
 

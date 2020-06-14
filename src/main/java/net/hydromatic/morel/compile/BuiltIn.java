@@ -30,11 +30,10 @@ import net.hydromatic.morel.type.RecordType;
 import net.hydromatic.morel.type.Type;
 import net.hydromatic.morel.type.TypeSystem;
 import net.hydromatic.morel.type.TypeVar;
+import net.hydromatic.morel.util.Static;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -1076,6 +1075,9 @@ public enum BuiltIn {
   /** Calls a consumer once per value. */
   public static void forEach(TypeSystem typeSystem,
       BiConsumer<BuiltIn, Type> consumer) {
+    if (Static.SKIP) {
+      return;
+    }
     for (BuiltIn builtIn : values()) {
       final Type type = builtIn.typeFunction.apply(typeSystem);
       consumer.accept(builtIn, type);
@@ -1085,6 +1087,9 @@ public enum BuiltIn {
   /** Calls a consumer once per structure. */
   public static void forEachStructure(TypeSystem typeSystem,
       BiConsumer<Structure, Type> consumer) {
+    if (Static.SKIP) {
+      return;
+    }
     final TreeMap<String, Type> nameTypes = new TreeMap<>(RecordType.ORDERING);
     BY_STRUCTURE.values().forEach(structure -> {
       nameTypes.clear();
@@ -1097,6 +1102,8 @@ public enum BuiltIn {
   /** Defines built-in {@code datatype} and {@code eqtype} instances, e.g.
    *  {@code option}, {@code vector}. */
   public static void dataTypes(TypeSystem ts, List<Binding> bindings) {
+//    defineDataType(ts, bindings, "list", 1, h ->
+//        h.tyCon("nil").tyCon("cons", h.get(0)));
     defineDataType(ts, bindings, "order", 0, h ->
         h.tyCon("LESS").tyCon("EQUAL").tyCon("GREATER"));
     defineDataType(ts, bindings, "option", 1, h ->
@@ -1114,7 +1121,7 @@ public enum BuiltIn {
     for (int i = 0; i < varCount; i++) {
       tyVars.add(ts.typeVariable(i));
     }
-    final Map<String, Type> tyCons = new LinkedHashMap<>();
+    final SortedMap<String, Type> tyCons = new TreeMap<>();
     transform.apply(new DataTypeHelper() {
       public DataTypeHelper tyCon(String name, Type type) {
         tyCons.put(name, type);
@@ -1129,7 +1136,7 @@ public enum BuiltIn {
         return tyVars.get(i);
       }
     });
-    final Type type = ts.dataTypeScheme(name, tyVars, tyCons, null);
+    final Type type = ts.dataTypeScheme(name, tyVars, tyCons);
     final DataType dataType = (DataType) (type instanceof DataType ? type
         : ((ForallType) type).type);
     tyCons.keySet().forEach(tyConName ->

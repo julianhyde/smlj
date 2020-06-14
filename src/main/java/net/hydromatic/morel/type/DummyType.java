@@ -28,8 +28,8 @@ import java.util.function.UnaryOperator;
 public enum DummyType implements Type {
   INSTANCE;
 
-  public String description() {
-    return "dummy";
+  public Key key() {
+    return Keys.name("");
   }
 
   public Op op() {

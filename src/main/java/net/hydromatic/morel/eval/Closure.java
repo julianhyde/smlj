@@ -27,6 +27,8 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
 
+import static net.hydromatic.morel.util.Static.skip;
+
 /** Value that is sufficient for a function to bind its argument
  * and evaluate its body. */
 public class Closure implements Comparable<Closure>, Applicable {
@@ -178,7 +180,7 @@ public class Closure implements Comparable<Closure>, Applicable {
         return false;
       }
       final Object head = consValue.get(0);
-      final List<Object> tail = consValue.subList(1, consValue.size());
+      final List<Object> tail = skip(1, consValue);
       return bindRecurse(infixPat.p0, envRef, head)
           && bindRecurse(infixPat.p1, envRef, tail);
 

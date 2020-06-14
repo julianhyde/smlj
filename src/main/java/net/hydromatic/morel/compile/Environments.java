@@ -28,6 +28,7 @@ import net.hydromatic.morel.type.Binding;
 import net.hydromatic.morel.type.PrimitiveType;
 import net.hydromatic.morel.type.Type;
 import net.hydromatic.morel.type.TypeSystem;
+import net.hydromatic.morel.util.Static;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -63,7 +64,16 @@ public abstract class Environments {
   private static Environment env(Environment environment, TypeSystem typeSystem,
       Map<String, ForeignValue> valueMap) {
     final List<Binding> bindings = new ArrayList<>();
-    BuiltIn.dataTypes(typeSystem, bindings);
+    if (!Static.SKIP) {
+      BuiltIn.dataTypes(typeSystem, bindings);
+      functionBindings(typeSystem, bindings);
+      foreignBindings(typeSystem, valueMap, bindings);
+    }
+    return bind(environment, bindings);
+  }
+
+  private static void functionBindings(TypeSystem typeSystem,
+      List<Binding> bindings) {
     for (Map.Entry<BuiltIn, Object> entry : Codes.BUILT_IN_VALUES.entrySet()) {
       BuiltIn key = entry.getKey();
       final Type type = key.typeFunction.apply(typeSystem);
@@ -79,9 +89,6 @@ public abstract class Environments {
     BuiltIn.forEachStructure(typeSystem, (structure, type) ->
         bindings.add(
             Binding.of(structure.name, type, emptyEnv.getOpt(structure.name))));
-
-    foreignBindings(typeSystem, valueMap, bindings);
-    return bind(environment, bindings);
   }
 
   private static void foreignBindings(TypeSystem typeSystem,

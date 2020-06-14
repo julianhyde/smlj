@@ -39,9 +39,9 @@ public abstract class ParameterizedType extends BaseType implements NamedType {
   public final List<Type> parameterTypes;
 
   /** Creates a ParameterizedType. */
-  ParameterizedType(Op op, String name, String moniker, String description,
+  ParameterizedType(Op op, String name, String moniker,
       List<? extends Type> parameterTypes) {
-    super(op, description);
+    super(op);
     this.name = Objects.requireNonNull(name);
     this.moniker = Objects.requireNonNull(moniker);
     this.parameterTypes = ImmutableList.copyOf(parameterTypes);

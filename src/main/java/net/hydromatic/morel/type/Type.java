@@ -27,18 +27,18 @@ import java.util.function.UnaryOperator;
 public interface Type {
   /** Description of the type, e.g. "{@code int}", "{@code int -> int}",
    * "{@code NONE | SOME of 'a}". */
-  String description();
+  Key key();
 
   /** Key of the type.
    *
-   * <p>Often the same as {@link #description()}, but an exception is datatype.
+   * <p>Often the same as {@link #key()}, but an exception is datatype.
    * For example, datatype "{@code 'a option}" has moniker and name
    * "{@code option}" and description "{@code NONE | SOME of 'a}".
    *
    * <p>Use the description if you are looking for a type that is structurally
    * equivalent. Use the moniker to identify it when printing. */
   default String moniker() {
-    return description();
+    return key().toString();
   }
 
   /** Type operator. */
@@ -52,6 +52,7 @@ public interface Type {
 
   /** Returns a copy of this type, specialized by substituting type
    * parameters. */
+  @Deprecated
   default Type substitute(TypeSystem typeSystem, List<Type> types,
       TypeSystem.Transaction transaction) {
     if (!types.isEmpty()) {
@@ -59,6 +60,18 @@ public interface Type {
           + types + " (expected 0)");
     }
     return this;
+  }
+
+  /** Structural identifier of a type. */
+  interface Key {
+    Type toType();
+  }
+
+  /** Definition of a type. */
+  interface Def {
+    StringBuilder describe(StringBuilder stringBuilder);
+
+    DataType toType(TypeSystem typeSystem);
   }
 }
 

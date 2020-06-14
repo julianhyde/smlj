@@ -35,9 +35,9 @@ import java.util.function.UnaryOperator;
  * later we convert it to the real data type "list".
  */
 public class TemporaryType extends ParameterizedType {
-  TemporaryType(String name, String moniker, String description,
+  TemporaryType(String name, String moniker,
       List<? extends Type> parameterTypes) {
-    super(Op.TEMPORARY_DATA_TYPE, name, moniker, description, parameterTypes);
+    super(Op.TEMPORARY_DATA_TYPE, name, moniker, parameterTypes);
   }
 
   public TemporaryType copy(TypeSystem typeSystem,
@@ -47,6 +47,10 @@ public class TemporaryType extends ParameterizedType {
 
   public <R> R accept(TypeVisitor<R> typeVisitor) {
     throw new UnsupportedOperationException();
+  }
+
+  public Key key() {
+    return Keys.name(name);
   }
 
   @Override public Type substitute(TypeSystem typeSystem, List<Type> types,

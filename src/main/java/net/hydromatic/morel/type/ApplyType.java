@@ -21,44 +21,26 @@ package net.hydromatic.morel.type;
 import com.google.common.collect.ImmutableList;
 
 import net.hydromatic.morel.ast.Op;
-import net.hydromatic.morel.util.Ord;
+import net.hydromatic.morel.util.Static;
 
-import java.util.List;
 import java.util.Objects;
 import java.util.function.UnaryOperator;
 
+import static net.hydromatic.morel.util.Static.toImmutableList;
+
 /** Type that is a polymorphic type applied to a set of types. */
 public class ApplyType extends BaseType {
-  public final Type type;
+  public final ParameterizedType type;
   public final ImmutableList<Type> types;
 
-  protected ApplyType(Type type, ImmutableList<Type> types,
-      String description) {
-    super(Op.APPLY_TYPE, description);
+  protected ApplyType(ParameterizedType type, ImmutableList<Type> types) {
+    super(Op.APPLY_TYPE);
     this.type = Objects.requireNonNull(type);
     this.types = Objects.requireNonNull(types);
   }
 
-  static String computeDescription(Type type, List<Type> types) {
-    final StringBuilder b = new StringBuilder();
-    switch (types.size()) {
-    case 0:
-      break;
-    case 1:
-      b.append(types.get(0).moniker()).append(' ');
-      break;
-    default:
-      b.append('(');
-      Ord.forEach(types, (t, i) -> {
-        if (i > 0) {
-          b.append(',');
-        }
-        b.append(t.moniker());
-      });
-      b.append(") ");
-    }
-    b.append(type.moniker());
-    return b.toString();
+  public Key key() {
+    return Keys.apply(type, types);
   }
 
   public <R> R accept(TypeVisitor<R> typeVisitor) {
@@ -67,10 +49,9 @@ public class ApplyType extends BaseType {
 
   public Type copy(TypeSystem typeSystem, UnaryOperator<Type> transform) {
     final Type type2 = type.copy(typeSystem, transform);
-    //noinspection UnstableApiUsage
     final ImmutableList<Type> types2 =
         types.stream().map(t -> t.copy(typeSystem, transform))
-            .collect(ImmutableList.toImmutableList());
+            .collect(toImmutableList());
     return type == type2 && types.equals(types2) ? this
         : typeSystem.apply(type2, types2);
   }

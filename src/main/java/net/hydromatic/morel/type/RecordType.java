@@ -34,15 +34,18 @@ import java.util.function.UnaryOperator;
 public class RecordType extends BaseType {
   public final SortedMap<String, Type> argNameTypes;
 
-  RecordType(String description,
-      ImmutableSortedMap<String, Type> argNameTypes) {
-    super(Op.RECORD_TYPE, description);
+  RecordType(ImmutableSortedMap<String, Type> argNameTypes) {
+    super(Op.RECORD_TYPE);
     this.argNameTypes = Objects.requireNonNull(argNameTypes);
     Preconditions.checkArgument(argNameTypes.comparator() == ORDERING);
   }
 
   public <R> R accept(TypeVisitor<R> typeVisitor) {
     return typeVisitor.visit(this);
+  }
+
+  public Key key() {
+    return Keys.record(argNameTypes);
   }
 
   public RecordType copy(TypeSystem typeSystem, UnaryOperator<Type> transform) {

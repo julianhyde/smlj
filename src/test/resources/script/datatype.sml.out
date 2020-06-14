@@ -223,6 +223,12 @@ datatype ('y, 'x) tree =
  | Node of ('y, 'x) tree * 'x * 'y * ('y, 'x) tree;
 datatype ('a,'b) tree = Empty | Node of ('a,'b) tree * 'b * 'a * ('a,'b) tree
 
+Empty;
+val it = Empty : ('a,'b) tree
+
+Node (Empty, true, "yes", Empty);
+val it = Node (Empty,true,"yes",Empty) : (string,bool) tree
+
 
 (*) Mutually recursive
 (*  disabled - need generics
