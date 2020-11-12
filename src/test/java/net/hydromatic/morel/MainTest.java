@@ -20,18 +20,11 @@ package net.hydromatic.morel;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 
 import net.hydromatic.morel.ast.Ast;
-import net.hydromatic.morel.ast.AstNode;
 import net.hydromatic.morel.parse.ParseException;
 import net.hydromatic.morel.type.TypeVar;
 
-import org.hamcrest.CustomTypeSafeMatcher;
-import org.hamcrest.Description;
-import org.hamcrest.Matcher;
-import org.hamcrest.TypeSafeMatcher;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -40,11 +33,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.math.BigDecimal;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
-import java.util.Set;
 
+import static net.hydromatic.morel.Matchers.equalsOrdered;
+import static net.hydromatic.morel.Matchers.equalsUnordered;
+import static net.hydromatic.morel.Matchers.isLiteral;
+import static net.hydromatic.morel.Matchers.list;
+import static net.hydromatic.morel.Matchers.throwsA;
 import static net.hydromatic.morel.Ml.assertError;
 import static net.hydromatic.morel.Ml.ml;
 
@@ -58,68 +53,6 @@ import static org.junit.Assert.assertThat;
  * Kick the tires.
  */
 public class MainTest {
-  /** Matches a literal by value. */
-  @SuppressWarnings("rawtypes")
-  private static Matcher<Ast.Literal> isLiteral(Comparable comparable,
-      String ml) {
-    return new TypeSafeMatcher<Ast.Literal>() {
-      protected boolean matchesSafely(Ast.Literal literal) {
-        final String actualMl = Ast.toString(literal);
-        return literal.value.equals(comparable)
-            && actualMl.equals(ml);
-      }
-
-      public void describeTo(Description description) {
-        description.appendText("literal with value " + comparable
-            + " and ML " + ml);
-      }
-    };
-  }
-
-  /** Matches an AST node by its string representation. */
-  static <T extends AstNode> Matcher<T> isAst(Class<? extends T> clazz,
-      String expected) {
-    return new CustomTypeSafeMatcher<T>("ast with value " + expected) {
-      protected boolean matchesSafely(T t) {
-        assertThat(clazz.isInstance(t), is(true));
-        final String s = Ast.toString(t);
-        return s.equals(expected) && s.equals(t.toString());
-      }
-    };
-  }
-
-  private static List<Object> list(Object... values) {
-    return Arrays.asList(values);
-  }
-
-  @SafeVarargs
-  private static <E> Matcher<Iterable<E>> equalsUnordered(E... elements) {
-    final Set<E> expectedSet = Sets.newHashSet(elements);
-    return new TypeSafeMatcher<Iterable<E>>() {
-      protected boolean matchesSafely(Iterable<E> item) {
-        //noinspection rawtypes
-        return Sets.newHashSet((Iterable) item).equals(expectedSet);
-      }
-
-      public void describeTo(Description description) {
-        description.appendText("equalsUnordered").appendValue(expectedSet);
-      }
-    };
-  }
-
-  @SafeVarargs
-  private static <E> Matcher<Iterable<E>> equalsOrdered(E... elements) {
-    final List<E> expectedList = Arrays.asList(elements);
-    return new TypeSafeMatcher<Iterable<E>>() {
-      protected boolean matchesSafely(Iterable<E> item) {
-        return Lists.newArrayList(item).equals(expectedList);
-      }
-
-      public void describeTo(Description description) {
-        description.appendText("equalsOrdered").appendValue(expectedList);
-      }
-    };
-  }
 
   @Test public void testEmptyRepl() {
     final String[] args = new String[0];
@@ -162,8 +95,8 @@ public class MainTest {
     ml("#\"a\"").assertParseLiteral(isLiteral('a', "#\"a\""));
 
     // true and false are variables, not actually literals
-    ml("true").assertStmt(Ast.Id.class, "true");
-    ml("false").assertStmt(Ast.Id.class, "false");
+    ml("true").assertParseStmt(Ast.Id.class, "true");
+    ml("false").assertParseStmt(Ast.Id.class, "false");
 
     ml("val x = 5").assertParseDecl(Ast.ValDecl.class, "val x = 5");
     ml("val x : int = 5")
@@ -731,25 +664,6 @@ public class MainTest {
     ml("let fun f x = 1 + x; val x = 2 in f x end").assertEval(is(3));
   }
 
-  private Matcher<Throwable> throwsA(String message) {
-    return new CustomTypeSafeMatcher<Throwable>("throwable: " + message) {
-      @Override protected boolean matchesSafely(Throwable item) {
-        return item.toString().contains(message);
-      }
-    };
-  }
-
-  private <T extends Throwable> Matcher<Throwable> throwsA(Class<T> clazz,
-      Matcher<?> messageMatcher) {
-    return new CustomTypeSafeMatcher<Throwable>(clazz + " with message "
-        + messageMatcher) {
-      @Override protected boolean matchesSafely(Throwable item) {
-        return clazz.isInstance(item)
-            && messageMatcher.matches(item.getMessage());
-      }
-    };
-  }
-
   /** Tests that in a {@code let} clause, we can see previously defined
    * variables. */
   @Test public void testLet2() {
@@ -830,8 +744,7 @@ public class MainTest {
 
   @Test public void testRecord() {
     ml("{a = 1, b = {c = true, d = false}}").assertParseSame();
-    ml("{a = 1, 1 = 2}")
-        .assertStmt(Ast.Record.class, "{1 = 2, a = 1}");
+    ml("{a = 1, 1 = 2}").assertParseStmt(Ast.Record.class, "{1 = 2, a = 1}");
     ml("#b {a = 1, b = {c = true, d = false}}").assertParseSame();
     ml("{0=1}").assertError(is("label must be positive"));
     ml("{a = 1, b = true}").assertType("{a:int, b:bool}");
@@ -1543,69 +1456,6 @@ public class MainTest {
     ml(ml).assertParse(expected)
         .assertType(is("int list"))
         .assertEvalIter(equalsUnordered(3, 7));
-  }
-
-  /** Tests a program that uses an external collection from the "scott" JDBC
-   * database. */
-  @Test public void testScott() {
-    final String ml = "let\n"
-        + "  val emps = #emp scott\n"
-        + "in\n"
-        + "  from e in emps yield #deptno e\n"
-        + "end\n";
-    ml(ml)
-        .withBinding("scott", BuiltInDataSet.SCOTT)
-        .assertType("int list")
-        .assertEvalIter(
-            equalsOrdered(20, 30, 30, 20, 30, 30, 10, 20, 10, 30, 20, 30, 20,
-                10));
-  }
-
-  @Test public void testScottJoin() {
-    final String ml = "let\n"
-        + "  val emps = #emp scott\n"
-        + "  and depts = #dept scott\n"
-        + "in\n"
-        + "  from e in emps, d in depts\n"
-        + "    where #deptno e = #deptno d\n"
-        + "    andalso #empno e >= 7900\n"
-        + "    yield {empno = #empno e, dname = #dname d}\n"
-        + "end\n";
-    ml(ml)
-        .withBinding("scott", BuiltInDataSet.SCOTT)
-        .assertType("{dname:string, empno:int} list")
-        .assertEvalIter(
-            equalsOrdered(list("SALES", 7900), list("RESEARCH", 7902),
-                list("ACCOUNTING", 7934)));
-  }
-
-  /** As {@link #testScottJoin()} but without intermediate variables. */
-  @Test public void testScottJoin2() {
-    final String ml = "from e in #emp scott, d in #dept scott\n"
-        + "  where #deptno e = #deptno d\n"
-        + "  andalso #empno e >= 7900\n"
-        + "  yield {empno = #empno e, dname = #dname d}\n";
-    ml(ml)
-        .withBinding("scott", BuiltInDataSet.SCOTT)
-        .assertType("{dname:string, empno:int} list")
-        .assertEvalIter(
-            equalsOrdered(list("SALES", 7900), list("RESEARCH", 7902),
-                list("ACCOUNTING", 7934)));
-  }
-
-  /** As {@link #testScottJoin2()} but using dot notation ('e.field' rather
-   * than '#field e'). */
-  @Test public void testScottJoin2Dot() {
-    final String ml = "from e in scott.emp, d in scott.dept\n"
-        + "  where e.deptno = d.deptno\n"
-        + "  andalso e.empno >= 7900\n"
-        + "  yield {empno = e.empno, dname = d.dname}\n";
-    ml(ml)
-        .withBinding("scott", BuiltInDataSet.SCOTT)
-        .assertType("{dname:string, empno:int} list")
-        .assertEvalIter(
-            equalsOrdered(list("SALES", 7900), list("RESEARCH", 7902),
-                list("ACCOUNTING", 7934)));
   }
 
   @Test public void testError() {

@@ -18,10 +18,18 @@
  */
 package net.hydromatic.morel;
 
+import org.apache.calcite.DataContext;
+import org.apache.calcite.interpreter.Interpreter;
+import org.apache.calcite.linq4j.Enumerable;
+import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.rel.RelNode;
+
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Ordering;
 
 import net.hydromatic.morel.ast.Ast;
 import net.hydromatic.morel.ast.AstNode;
+import net.hydromatic.morel.compile.CalciteCompiler;
 import net.hydromatic.morel.compile.CompiledStatement;
 import net.hydromatic.morel.compile.Compiler;
 import net.hydromatic.morel.compile.Compiles;
@@ -34,20 +42,27 @@ import net.hydromatic.morel.eval.Codes;
 import net.hydromatic.morel.eval.EvalEnv;
 import net.hydromatic.morel.eval.Session;
 import net.hydromatic.morel.foreign.Calcite;
+import net.hydromatic.morel.foreign.Converters;
 import net.hydromatic.morel.foreign.DataSet;
 import net.hydromatic.morel.parse.MorelParserImpl;
 import net.hydromatic.morel.parse.ParseException;
+import net.hydromatic.morel.type.Type;
 import net.hydromatic.morel.type.TypeSystem;
 
-import org.hamcrest.CoreMatchers;
 import org.hamcrest.Matcher;
 
 import java.io.StringReader;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
+
+import static net.hydromatic.morel.Matchers.isAst;
 
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 
@@ -111,29 +126,29 @@ class Ml {
 
   Ml assertParseDecl(Class<? extends Ast.Decl> clazz,
       String expected) {
-    return assertParseDecl(MainTest.isAst(clazz, expected));
+    return assertParseDecl(isAst(clazz, expected));
   }
 
-  Ml assertStmt(Matcher<AstNode> matcher) {
-    try {
-      final AstNode statement =
-          new MorelParserImpl(new StringReader(ml)).statement();
-      assertThat(statement, matcher);
-      return this;
-    } catch (ParseException e) {
-      throw new RuntimeException(e);
-    }
+  Ml assertParseStmt(Matcher<AstNode> matcher) {
+    return withParser(parser -> {
+      try {
+        final AstNode statement = parser.statement();
+        assertThat(statement, matcher);
+      } catch (ParseException e) {
+        throw new RuntimeException(e);
+      }
+    });
   }
 
-  Ml assertStmt(Class<? extends AstNode> clazz,
+  Ml assertParseStmt(Class<? extends AstNode> clazz,
       String expected) {
-    return assertStmt(MainTest.isAst(clazz, expected));
+    return assertParseStmt(isAst(clazz, expected));
   }
 
   /** Checks that an expression can be parsed and returns the given string
    * when unparsed. */
   Ml assertParse(String expected) {
-    return assertStmt(AstNode.class, expected);
+    return assertParseStmt(AstNode.class, expected);
   }
 
   /** Checks that an expression can be parsed and returns the identical
@@ -201,6 +216,29 @@ class Ml {
     });
   }
 
+  Ml assertCalcite(Matcher<String> matcher) {
+    try {
+      final Ast.Exp e = new MorelParserImpl(new StringReader(ml)).expression();
+      final TypeSystem typeSystem = new TypeSystem();
+
+      final Calcite calcite = Calcite.withDataSets(dataSetMap);
+      final Environment env =
+          Environments.env(typeSystem, calcite.foreignValues());
+      final Ast.ValDecl valDecl = Compiles.toValDecl(e);
+      final TypeResolver.Resolved resolved =
+          TypeResolver.deduceType(env, valDecl, typeSystem);
+      final Ast.ValDecl valDecl2 = (Ast.ValDecl) resolved.node;
+      final RelNode rel =
+          new CalciteCompiler(resolved.typeMap)
+              .toRel(env, Compiles.toExp(valDecl2));
+      final String relString = RelOptUtil.toString(rel);
+      assertThat(relString, matcher);
+      return this;
+    } catch (ParseException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   <E> Ml assertEvalIter(Matcher<Iterable<E>> matcher) {
     return assertEval((Matcher) matcher);
   }
@@ -216,11 +254,8 @@ class Ml {
       final TypeResolver.Resolved resolved =
           TypeResolver.deduceType(env, valDecl, typeSystem);
       final Ast.ValDecl valDecl2 = (Ast.ValDecl) resolved.node;
-      final Code code =
-          new Compiler(resolved.typeMap)
-              .compile(env, Compiles.toExp(valDecl2));
-      final EvalEnv evalEnv = Codes.emptyEnvWith(new Session(), env);
-      final Object value = code.eval(evalEnv);
+      final Ast.Exp e2 = Compiles.toExp(valDecl2);
+      final Object value = eval(env, resolved, e2);
       assertThat(value, matcher);
       return this;
     } catch (ParseException e) {
@@ -237,12 +272,55 @@ class Ml {
 
   Ml assertEvalError(Matcher<Throwable> matcher) {
     try {
-      assertEval(CoreMatchers.notNullValue());
+      assertEval(notNullValue());
       fail("expected error");
     } catch (Throwable e) {
       assertThat(e, matcher);
     }
     return this;
+  }
+
+  Ml assertEvalSame() {
+    try {
+      final Ast.Exp e = new MorelParserImpl(new StringReader(ml)).expression();
+      final TypeSystem typeSystem = new TypeSystem();
+      final Calcite calcite = Calcite.withDataSets(dataSetMap);
+      final Environment env =
+          Environments.env(typeSystem, calcite.foreignValues());
+      final Ast.ValDecl valDecl = Compiles.toValDecl(e);
+      final TypeResolver.Resolved resolved =
+          TypeResolver.deduceType(env, valDecl, typeSystem);
+      final Ast.ValDecl valDecl2 = (Ast.ValDecl) resolved.node;
+      final Ast.Exp e2 = Compiles.toExp(valDecl2);
+      final Object value = eval(env, resolved, e2);
+      final Object value2 = evalCalcite(calcite, env, resolved, e2);
+      if (!Objects.equals(value, value2)
+          && value instanceof List
+          && value2 instanceof List
+          && !ml.contains("order")) {
+        final List list = Ordering.natural().immutableSortedCopy((List) value);
+        final List list2 = Ordering.natural().immutableSortedCopy((List) value2);
+        assertThat(list2, is(list));
+      } else {
+        assertThat(value2, is(value));
+      }
+      return this;
+    } catch (ParseException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private Object evalCalcite(Calcite calcite, Environment env,
+      TypeResolver.Resolved resolved, Ast.Exp e) {
+    final RelNode rel =
+        new CalciteCompiler(resolved.typeMap)
+            .toRel(env, e);
+    final DataContext dataContext = calcite.dataContext;
+    final Interpreter interpreter = new Interpreter(dataContext, rel);
+    final Type type = resolved.typeMap.getType(e);
+    final Function<Enumerable<Object[]>, List<Object>> converter =
+        Converters.fromEnumerable(rel, type);
+    return converter.apply(interpreter);
   }
 
   Ml assertError(Matcher<String> matcher) {
