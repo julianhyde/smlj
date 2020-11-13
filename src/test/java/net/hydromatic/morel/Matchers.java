@@ -23,6 +23,7 @@ import com.google.common.collect.Sets;
 
 import net.hydromatic.morel.ast.Ast;
 import net.hydromatic.morel.ast.AstNode;
+
 import org.hamcrest.CustomTypeSafeMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
@@ -35,6 +36,7 @@ import java.util.Set;
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
 
+/** Matchers for use in Morel tests. */
 public abstract class Matchers {
   private Matchers() {}
 
@@ -119,3 +121,5 @@ public abstract class Matchers {
     };
   }
 }
+
+// End Matchers.java

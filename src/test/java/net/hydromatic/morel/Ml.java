@@ -38,7 +38,6 @@ import net.hydromatic.morel.parse.MorelParserImpl;
 import net.hydromatic.morel.parse.ParseException;
 import net.hydromatic.morel.type.TypeSystem;
 
-import org.hamcrest.CoreMatchers;
 import org.hamcrest.Matcher;
 
 import java.io.StringReader;
@@ -46,7 +45,10 @@ import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
+import static net.hydromatic.morel.Matchers.isAst;
+
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 
@@ -110,7 +112,7 @@ class Ml {
 
   Ml assertParseDecl(Class<? extends Ast.Decl> clazz,
       String expected) {
-    return assertParseDecl(MainTest.isAst(clazz, expected));
+    return assertParseDecl(isAst(clazz, expected));
   }
 
   Ml assertStmt(Matcher<AstNode> matcher) {
@@ -126,7 +128,7 @@ class Ml {
 
   Ml assertStmt(Class<? extends AstNode> clazz,
       String expected) {
-    return assertStmt(MainTest.isAst(clazz, expected));
+    return assertStmt(isAst(clazz, expected));
   }
 
   /** Checks that an expression can be parsed and returns the given string
@@ -228,7 +230,7 @@ class Ml {
 
   Ml assertEvalError(Matcher<Throwable> matcher) {
     try {
-      assertEval(CoreMatchers.notNullValue());
+      assertEval(notNullValue());
       fail("expected error");
     } catch (Throwable e) {
       assertThat(e, matcher);
