@@ -95,8 +95,8 @@ public class MainTest {
     ml("#\"a\"").assertParseLiteral(isLiteral('a', "#\"a\""));
 
     // true and false are variables, not actually literals
-    ml("true").assertStmt(Ast.Id.class, "true");
-    ml("false").assertStmt(Ast.Id.class, "false");
+    ml("true").assertParseStmt(Ast.Id.class, "true");
+    ml("false").assertParseStmt(Ast.Id.class, "false");
 
     ml("val x = 5").assertParseDecl(Ast.ValDecl.class, "val x = 5");
     ml("val x : int = 5")
@@ -744,8 +744,7 @@ public class MainTest {
 
   @Test public void testRecord() {
     ml("{a = 1, b = {c = true, d = false}}").assertParseSame();
-    ml("{a = 1, 1 = 2}")
-        .assertStmt(Ast.Record.class, "{1 = 2, a = 1}");
+    ml("{a = 1, 1 = 2}").assertParseStmt(Ast.Record.class, "{1 = 2, a = 1}");
     ml("#b {a = 1, b = {c = true, d = false}}").assertParseSame();
     ml("{0=1}").assertError(is("label must be positive"));
     ml("{a = 1, b = true}").assertType("{a:int, b:bool}");

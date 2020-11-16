@@ -48,7 +48,7 @@ public class AlgebraTest {
   @Test public void testScott2() {
     final String ml = "from e in scott.emp yield e.deptno";
     ml(ml)
-        .withBinding("scott", DataSet.SCOTT.foreignValue())
+        .withBinding("scott", BuiltInDataSet.SCOTT)
         .assertType("int list")
         .assertEvalIter(
             equalsOrdered(20, 30, 30, 20, 30, 30, 10, 20, 10, 30, 20, 30, 20,

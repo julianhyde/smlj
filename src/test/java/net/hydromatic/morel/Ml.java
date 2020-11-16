@@ -115,26 +115,26 @@ class Ml {
     return assertParseDecl(isAst(clazz, expected));
   }
 
-  Ml assertStmt(Matcher<AstNode> matcher) {
-    try {
-      final AstNode statement =
-          new MorelParserImpl(new StringReader(ml)).statement();
-      assertThat(statement, matcher);
-      return this;
-    } catch (ParseException e) {
-      throw new RuntimeException(e);
-    }
+  Ml assertParseStmt(Matcher<AstNode> matcher) {
+    return withParser(parser -> {
+      try {
+        final AstNode statement = parser.statement();
+        assertThat(statement, matcher);
+      } catch (ParseException e) {
+        throw new RuntimeException(e);
+      }
+    });
   }
 
-  Ml assertStmt(Class<? extends AstNode> clazz,
+  Ml assertParseStmt(Class<? extends AstNode> clazz,
       String expected) {
-    return assertStmt(isAst(clazz, expected));
+    return assertParseStmt(isAst(clazz, expected));
   }
 
   /** Checks that an expression can be parsed and returns the given string
    * when unparsed. */
   Ml assertParse(String expected) {
-    return assertStmt(AstNode.class, expected);
+    return assertParseStmt(AstNode.class, expected);
   }
 
   /** Checks that an expression can be parsed and returns the identical
