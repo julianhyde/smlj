@@ -18,14 +18,28 @@
  */
 package net.hydromatic.morel;
 
+import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
+
+import com.google.common.collect.ImmutableMap;
 
 import net.hydromatic.morel.foreign.ForeignValue;
 
-/** Data set for testing. */
-interface DataSet {
-  /** Returns this data set as a foreign value. */
-  ForeignValue foreignValue(RelBuilder relBuilder);
+import java.util.Map;
+
+/** Runtime context. */
+class Calcite {
+  final RelBuilder relBuilder;
+  final ImmutableMap<String, ForeignValue> valueMap;
+
+  Calcite(Map<String, DataSet> dataSetMap) {
+    relBuilder = RelBuilder.create(Frameworks.newConfigBuilder().build());
+    final ImmutableMap.Builder<String, ForeignValue> b = ImmutableMap.builder();
+    dataSetMap.forEach((name, dataSet) -> b.put(
+        name,
+        dataSet.foreignValue(relBuilder)));
+    this.valueMap = b.build();
+  }
 }
 
-// End DataSet.java
+// End Calcite.java

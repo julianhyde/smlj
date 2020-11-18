@@ -153,7 +153,9 @@ public class ScriptTest {
         inFile.getPath().contains("foreign.sml")
             || inFile.getPath().contains("blog.sml");
     final Map<String, ForeignValue> dictionary =
-        loadDictionary ? new DataSet.Dictionary() : ImmutableMap.of();
+        loadDictionary
+            ? new Calcite(BuiltInDataSet.DICTIONARY).valueMap
+            : ImmutableMap.of();
     try (Reader reader = Utils.reader(inFile);
          Writer writer = Utils.printWriter(outFile)) {
       new Main(args, reader, writer, dictionary).run();
