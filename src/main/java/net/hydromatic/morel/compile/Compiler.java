@@ -55,9 +55,9 @@ import static net.hydromatic.morel.util.Static.toImmutableList;
 
 /** Compiles an expression to code that can be evaluated. */
 public class Compiler {
-  private static final EvalEnv EMPTY_ENV = Codes.emptyEnv();
+  protected static final EvalEnv EMPTY_ENV = Codes.emptyEnv();
 
-  private final TypeMap typeMap;
+  protected final TypeMap typeMap;
 
   public Compiler(TypeMap typeMap) {
     this.typeMap = typeMap;
@@ -223,7 +223,7 @@ public class Compiler {
     }
   }
 
-  private Supplier<Codes.RowSink> createRowSinkFactory(Environment env0,
+  protected Supplier<Codes.RowSink> createRowSinkFactory(Environment env0,
       ImmutableList<Binding> bindings, List<Ast.FromStep> steps,
       Ast.Exp yieldExp) {
     final Environment env = env0.bindAll(bindings);
@@ -536,7 +536,7 @@ public class Compiler {
 
   /** Expands a pattern if it is a record pattern that has an ellipsis
    * or if the arguments are not in the same order as the labels in the type. */
-  private Ast.Pat expandRecordPattern(Ast.Pat pat, Type type) {
+  protected final Ast.Pat expandRecordPattern(Ast.Pat pat, Type type) {
     switch (pat.op) {
     case ID_PAT:
       final Ast.IdPat idPat = (Ast.IdPat) pat;

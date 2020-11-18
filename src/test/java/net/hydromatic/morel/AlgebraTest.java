@@ -24,6 +24,8 @@ import static net.hydromatic.morel.Matchers.equalsOrdered;
 import static net.hydromatic.morel.Matchers.list;
 import static net.hydromatic.morel.Ml.ml;
 
+import static org.hamcrest.core.Is.is;
+
 /**
  * Tests translation of Morel programs to Apache Calcite relational algebra.
  */
@@ -50,6 +52,7 @@ public class AlgebraTest {
     ml(ml)
         .withBinding("scott", BuiltInDataSet.SCOTT)
         .assertType("int list")
+        .assertCalcite(is("xx"))
         .assertEvalIter(
             equalsOrdered(20, 30, 30, 20, 30, 30, 10, 20, 10, 30, 20, 30, 20,
                 10));
@@ -100,6 +103,20 @@ public class AlgebraTest {
         .assertEvalIter(
             equalsOrdered(list("SALES", 7900), list("RESEARCH", 7902),
                 list("ACCOUNTING", 7934)));
+  }
+
+  /** Tests that Morel gives the same answer with and without Calcite. */
+  @Test public void testQueryList() {
+    final String[] queries = {
+        "from",
+    };
+    for (String query : queries) {
+      checkEqual(query);
+    }
+  }
+
+  void checkEqual(String ml) {
+    ml(ml).assertEvalSame();
   }
 }
 

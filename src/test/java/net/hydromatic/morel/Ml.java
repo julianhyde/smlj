@@ -18,10 +18,16 @@
  */
 package net.hydromatic.morel;
 
+import org.apache.calcite.DataContext;
+import org.apache.calcite.interpreter.Interpreter;
+import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.rel.RelNode;
+
 import com.google.common.collect.ImmutableMap;
 
 import net.hydromatic.morel.ast.Ast;
 import net.hydromatic.morel.ast.AstNode;
+import net.hydromatic.morel.compile.CalciteCompiler;
 import net.hydromatic.morel.compile.CompiledStatement;
 import net.hydromatic.morel.compile.Compiler;
 import net.hydromatic.morel.compile.Compiles;
@@ -41,6 +47,8 @@ import net.hydromatic.morel.type.TypeSystem;
 import org.hamcrest.Matcher;
 
 import java.io.StringReader;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -201,6 +209,29 @@ class Ml {
     });
   }
 
+  Ml assertCalcite(Matcher<String> matcher) {
+    try {
+      final Ast.Exp e = new MorelParserImpl(new StringReader(ml)).expression();
+      final TypeSystem typeSystem = new TypeSystem();
+
+      final Calcite calcite = Calcite.withDataSets(dataSetMap);
+      final Environment env =
+          Environments.env(typeSystem, calcite.foreignValues());
+      final Ast.ValDecl valDecl = Compiles.toValDecl(e);
+      final TypeResolver.Resolved resolved =
+          TypeResolver.deduceType(env, valDecl, typeSystem);
+      final Ast.ValDecl valDecl2 = (Ast.ValDecl) resolved.node;
+      final RelNode rel =
+          new CalciteCompiler(resolved.typeMap)
+              .toRel(env, Compiles.toExp(valDecl2));
+      final String relString = RelOptUtil.toString(rel);
+      assertThat(relString, matcher);
+      return this;
+    } catch (ParseException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   <E> Ml assertEvalIter(Matcher<Iterable<E>> matcher) {
     return assertEval((Matcher) matcher);
   }
@@ -216,16 +247,21 @@ class Ml {
       final TypeResolver.Resolved resolved =
           TypeResolver.deduceType(env, valDecl, typeSystem);
       final Ast.ValDecl valDecl2 = (Ast.ValDecl) resolved.node;
-      final Code code =
-          new Compiler(resolved.typeMap)
-              .compile(env, Compiles.toExp(valDecl2));
-      final EvalEnv evalEnv = Codes.emptyEnvWith(env);
-      final Object value = code.eval(evalEnv);
+      final Object value = eval(env, resolved, valDecl2);
       assertThat(value, matcher);
       return this;
     } catch (ParseException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  private Object eval(Environment env, TypeResolver.Resolved resolved,
+      Ast.ValDecl valDecl2) {
+    final Code code = new Compiler(resolved.typeMap).compile(
+        env,
+        Compiles.toExp(valDecl2));
+    final EvalEnv evalEnv = Codes.emptyEnvWith(env);
+    return code.eval(evalEnv);
   }
 
   Ml assertEvalError(Matcher<Throwable> matcher) {
@@ -236,6 +272,39 @@ class Ml {
       assertThat(e, matcher);
     }
     return this;
+  }
+
+  Ml assertEvalSame() {
+    try {
+      final Ast.Exp e = new MorelParserImpl(new StringReader(ml)).expression();
+      final TypeSystem typeSystem = new TypeSystem();
+      final Calcite calcite = Calcite.withDataSets(dataSetMap);
+      final Environment env =
+          Environments.env(typeSystem, calcite.foreignValues());
+      final Ast.ValDecl valDecl = Compiles.toValDecl(e);
+      final TypeResolver.Resolved resolved =
+          TypeResolver.deduceType(env, valDecl, typeSystem);
+      final Ast.ValDecl valDecl2 = (Ast.ValDecl) resolved.node;
+      final Object value = eval(env, resolved, valDecl2);
+      final Object value2 = evalCalcite(calcite, env, resolved, valDecl2);
+      return this;
+    } catch (ParseException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private Object evalCalcite(Calcite calcite, Environment env,
+      TypeResolver.Resolved resolved, Ast.ValDecl valDecl2) {
+    final RelNode rel =
+        new CalciteCompiler(resolved.typeMap)
+            .toRel(env, Compiles.toExp(valDecl2));
+    final DataContext dataContext = calcite.dataContext;
+    final Interpreter interpreter = new Interpreter(dataContext, rel);
+    final List<Object[]> rows = new ArrayList<>();
+    for (Object[] row : interpreter) {
+      rows.add(row);
+    }
+    return rows;
   }
 
   Ml assertError(Matcher<String> matcher) {
