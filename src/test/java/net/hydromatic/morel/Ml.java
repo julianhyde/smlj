@@ -20,10 +20,14 @@ package net.hydromatic.morel;
 
 import org.apache.calcite.DataContext;
 import org.apache.calcite.interpreter.Interpreter;
+import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.type.RelDataType;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
 
 import net.hydromatic.morel.ast.Ast;
 import net.hydromatic.morel.ast.AstNode;
@@ -38,20 +42,27 @@ import net.hydromatic.morel.compile.TypeResolver;
 import net.hydromatic.morel.eval.Code;
 import net.hydromatic.morel.eval.Codes;
 import net.hydromatic.morel.eval.EvalEnv;
+import net.hydromatic.morel.eval.Unit;
 import net.hydromatic.morel.foreign.Calcite;
+import net.hydromatic.morel.foreign.CalciteForeignValue;
 import net.hydromatic.morel.foreign.DataSet;
 import net.hydromatic.morel.parse.MorelParserImpl;
 import net.hydromatic.morel.parse.ParseException;
+import net.hydromatic.morel.type.ListType;
+import net.hydromatic.morel.type.PrimitiveType;
+import net.hydromatic.morel.type.RecordType;
+import net.hydromatic.morel.type.Type;
 import net.hydromatic.morel.type.TypeSystem;
 
 import org.hamcrest.Matcher;
 
 import java.io.StringReader;
-import java.util.ArrayList;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static net.hydromatic.morel.Matchers.isAst;
 
@@ -247,7 +258,8 @@ class Ml {
       final TypeResolver.Resolved resolved =
           TypeResolver.deduceType(env, valDecl, typeSystem);
       final Ast.ValDecl valDecl2 = (Ast.ValDecl) resolved.node;
-      final Object value = eval(env, resolved, valDecl2);
+      final Ast.Exp e2 = Compiles.toExp(valDecl2);
+      final Object value = eval(env, resolved, e2);
       assertThat(value, matcher);
       return this;
     } catch (ParseException e) {
@@ -256,10 +268,8 @@ class Ml {
   }
 
   private Object eval(Environment env, TypeResolver.Resolved resolved,
-      Ast.ValDecl valDecl2) {
-    final Code code = new Compiler(resolved.typeMap).compile(
-        env,
-        Compiles.toExp(valDecl2));
+      Ast.Exp e) {
+    final Code code = new Compiler(resolved.typeMap).compile(env, e);
     final EvalEnv evalEnv = Codes.emptyEnvWith(env);
     return code.eval(evalEnv);
   }
@@ -285,8 +295,10 @@ class Ml {
       final TypeResolver.Resolved resolved =
           TypeResolver.deduceType(env, valDecl, typeSystem);
       final Ast.ValDecl valDecl2 = (Ast.ValDecl) resolved.node;
-      final Object value = eval(env, resolved, valDecl2);
-      final Object value2 = evalCalcite(calcite, env, resolved, valDecl2);
+      final Ast.Exp e2 = Compiles.toExp(valDecl2);
+      final Object value = eval(env, resolved, e2);
+      final Object value2 = evalCalcite(calcite, env, resolved, e2);
+      assertThat(value2, is(value));
       return this;
     } catch (ParseException e) {
       throw new RuntimeException(e);
@@ -294,17 +306,44 @@ class Ml {
   }
 
   private Object evalCalcite(Calcite calcite, Environment env,
-      TypeResolver.Resolved resolved, Ast.ValDecl valDecl2) {
+      TypeResolver.Resolved resolved, Ast.Exp e) {
     final RelNode rel =
         new CalciteCompiler(resolved.typeMap)
-            .toRel(env, Compiles.toExp(valDecl2));
+            .toRel(env, e);
     final DataContext dataContext = calcite.dataContext;
     final Interpreter interpreter = new Interpreter(dataContext, rel);
-    final List<Object[]> rows = new ArrayList<>();
-    for (Object[] row : interpreter) {
-      rows.add(row);
+    final Type type = resolved.typeMap.getType(e);
+    final Function<Enumerable<Object[]>, List<Object>> converter =
+        Converters.fromEnumerable(rel, type);
+    return converter.apply(interpreter);
+  }
+
+  /** Utilities for converting from Calcite format to ML format. */
+  static class Converters {
+    @SuppressWarnings("unchecked")
+    static Function<Enumerable<Object[]>, List<Object>> fromEnumerable(RelNode rel,
+        Type type) {
+      final ListType listType = (ListType) type;
+      final RelDataType rowType = rel.getRowType();
+      final Function<Object[], Object> elementConverter =
+          forType(rowType, listType.elementType);
+      return iterable ->
+          Lists.newArrayList(
+              Iterables.transform(iterable, elementConverter::apply));
     }
-    return rows;
+
+    static Function forType(RelDataType fromType, Type type) {
+      if (type == PrimitiveType.UNIT) {
+        return o -> Unit.INSTANCE;
+      }
+      if (type instanceof RecordType) {
+        return new CalciteForeignValue.Converter(fromType, true);
+      }
+      if (fromType.isNullable()) {
+        return o -> o == null ? BigDecimal.ZERO : o;
+      }
+      return o -> o;
+    }
   }
 
   Ml assertError(Matcher<String> matcher) {

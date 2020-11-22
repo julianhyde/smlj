@@ -49,10 +49,11 @@ public class AlgebraTest {
   /** As previous, but with more concise syntax. */
   @Test public void testScott2() {
     final String ml = "from e in scott.emp yield e.deptno";
+    final String plan = "LogicalTableScan(table=[[scott, EMP]])\n";
     ml(ml)
         .withBinding("scott", BuiltInDataSet.SCOTT)
         .assertType("int list")
-        .assertCalcite(is("xx"))
+        .assertCalcite(is(plan))
         .assertEvalIter(
             equalsOrdered(20, 30, 30, 20, 30, 30, 10, 20, 10, 30, 20, 30, 20,
                 10));
@@ -109,6 +110,8 @@ public class AlgebraTest {
   @Test public void testQueryList() {
     final String[] queries = {
         "from",
+        "from e in scott.emp",
+        "from e in scott.emp yield e.deptno",
     };
     for (String query : queries) {
       checkEqual(query);
@@ -116,7 +119,7 @@ public class AlgebraTest {
   }
 
   void checkEqual(String ml) {
-    ml(ml).assertEvalSame();
+    ml(ml).withBinding("scott", BuiltInDataSet.SCOTT).assertEvalSame();
   }
 }
 

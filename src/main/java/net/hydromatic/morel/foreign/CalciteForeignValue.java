@@ -18,7 +18,6 @@
  */
 package net.hydromatic.morel.foreign;
 
-import org.apache.calcite.linq4j.function.Function1;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
@@ -43,6 +42,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.function.Function;
 
 /** Value based on a Calcite schema.
  *
@@ -75,16 +75,19 @@ public class CalciteForeignValue implements ForeignValue {
     table.getRowType(calcite.typeFactory)
         .getFieldList()
         .forEach(field ->
-            fields.put(convert(field.getName()),
-                toType(field).mlType));
+            fields.put(convert(field.getName()), toType(field).mlType));
     return typeSystem.listType(typeSystem.recordType(fields.build()));
   }
 
   private String convert(String name) {
+    return convert(lower, name);
+  }
+
+  private static String convert(boolean lower, String name) {
     return lower ? name.toLowerCase(Locale.ROOT) : name;
   }
 
-  private FieldConverter toType(RelDataTypeField field) {
+  private static FieldConverter toType(RelDataTypeField field) {
     final int ordinal = field.getIndex();
     switch (field.getType().getSqlTypeName()) {
     case BOOLEAN:
@@ -159,7 +162,7 @@ public class CalciteForeignValue implements ForeignValue {
     schema.getTableNames().forEach(tableName -> {
       final RelNode scan =
           calcite.relBuilder.scan(plus(names, tableName)).build();
-      final Converter converter = new Converter(scan.getRowType());
+      final Converter converter = new Converter(scan.getRowType(), lower);
       fieldValues.add(new RelList(scan, calcite.dataContext, converter));
     });
     return fieldValues.build();
@@ -175,14 +178,14 @@ public class CalciteForeignValue implements ForeignValue {
    * <p>The Calcite row is represented as an array, ordered by field ordinal;
    * the SML record is represented by a list, ordered by field name
    * (lower-case if {@link #lower}). */
-  private class Converter implements Function1<Object[], List<Object>> {
+  public static class Converter implements Function<Object[], List<Object>> {
     final Object[] tempValues;
     final FieldConverter[] fieldConverters;
 
-    Converter(RelDataType rowType) {
+    public Converter(RelDataType rowType, boolean lower) {
       final List<RelDataTypeField> fields =
           new ArrayList<>(rowType.getFieldList());
-      fields.sort(Comparator.comparing(f -> convert(f.getName())));
+      fields.sort(Comparator.comparing(f -> convert(lower, f.getName())));
       tempValues = new Object[fields.size()];
       fieldConverters = new FieldConverter[fields.size()];
       for (int i = 0; i < fieldConverters.length; i++) {
