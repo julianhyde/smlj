@@ -20,10 +20,9 @@ package net.hydromatic.morel.compile;
 
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
-import org.apache.calcite.rel.type.RelDataTypeField;
-import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexNode;
-import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
@@ -34,12 +33,14 @@ import org.apache.calcite.util.Util;
 import com.google.common.collect.ImmutableMap;
 
 import net.hydromatic.morel.ast.Ast;
+import net.hydromatic.morel.ast.Op;
 import net.hydromatic.morel.eval.Code;
 import net.hydromatic.morel.eval.EvalEnv;
 import net.hydromatic.morel.eval.EvalEnvs;
 import net.hydromatic.morel.foreign.RelList;
 import net.hydromatic.morel.type.Binding;
 import net.hydromatic.morel.type.ListType;
+import net.hydromatic.morel.type.RecordType;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -47,12 +48,37 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static net.hydromatic.morel.ast.AstBuilder.ast;
 
 /** Compiles an expression to code that can be evaluated. */
 public class CalciteCompiler extends Compiler {
+  /** Morel operators and their exact equivalents in Calcite. */
+  static final Map<String, SqlOperator> DIRECT_OPS =
+      ImmutableMap.<String, SqlOperator>builder()
+          .put("op =", SqlStdOperatorTable.EQUALS)
+          .put("op <>", SqlStdOperatorTable.NOT_EQUALS)
+          .put("op <", SqlStdOperatorTable.LESS_THAN)
+          .put("op <=", SqlStdOperatorTable.LESS_THAN_OR_EQUAL)
+          .put("op >", SqlStdOperatorTable.GREATER_THAN)
+          .put("op >=", SqlStdOperatorTable.GREATER_THAN_OR_EQUAL)
+          .put("op +", SqlStdOperatorTable.PLUS)
+          .put("op -", SqlStdOperatorTable.MINUS)
+          .put("op ~", SqlStdOperatorTable.UNARY_MINUS)
+          .put("op *", SqlStdOperatorTable.MULTIPLY)
+          .put("op /", SqlStdOperatorTable.DIVIDE)
+          .put("op mod", SqlStdOperatorTable.MOD)
+          .build();
+
+  static final Map<Op, SqlOperator> DIRECT_OPS2 =
+      ImmutableMap.<Op, SqlOperator>builder()
+          .put(Op.ANDALSO, SqlStdOperatorTable.AND)
+          .put(Op.ORELSE, SqlStdOperatorTable.OR)
+          .build();
+
   public CalciteCompiler(TypeMap typeMap) {
     super(typeMap);
   }
@@ -123,7 +149,7 @@ public class CalciteCompiler extends Compiler {
         }
       });
     }
-    final Context cx = new Context(env, relBuilder, map);
+    final Context cx = new Context(env.bindAll(bindings), relBuilder, map);
     for (Ast.FromStep fromStep : from.steps) {
       switch (fromStep.op) {
       case WHERE:
@@ -134,21 +160,34 @@ public class CalciteCompiler extends Compiler {
       }
     }
     if (from.yieldExp != null) {
-      project(cx, from.yieldExp);
+      yield_(cx, from.yieldExp);
     }
     return relBuilder;
   }
 
-  private RelBuilder project(Context cx, Ast.Exp exp) {
-    RexNode rex = translate(cx, exp);
-    if (rex.getKind() == SqlKind.ROW) {
-      return cx.relBuilder.project(((RexCall) rex).operands);
-    } else {
-      return cx.relBuilder.project(rex);
+  private RelBuilder yield_(Context cx, Ast.Exp exp) {
+    final Ast.Record record;
+    switch (exp.op) {
+    case ID:
+      final Ast.Id id = (Ast.Id) exp;
+      record = toRecord(cx, id);
+      if (record != null) {
+        return yield_(cx, record);
+      }
+      break;
+
+    case RECORD:
+      record = (Ast.Record) exp;
+      return cx.relBuilder.project(
+          Util.transform(record.args.values(), e -> translate(cx, e)),
+          record.args.keySet());
     }
+    RexNode rex = translate(cx, exp);
+    return cx.relBuilder.project(rex);
   }
 
   private RexNode translate(Context cx, Ast.Exp exp) {
+    final Ast.Record record;
     switch (exp.op) {
     case BOOL_LITERAL:
     case CHAR_LITERAL:
@@ -171,17 +210,16 @@ public class CalciteCompiler extends Compiler {
       // In 'from e in emps yield e', 'e' expands to a record,
       // '{e.deptno, e.ename}'
       final Ast.Id id = (Ast.Id) exp;
+      record = toRecord(cx, id);
+      if (record != null) {
+        return translate(cx, record);
+      }
       if (cx.map.containsKey(id.name)) {
+        // Not a record, so must be a scalar. It is represented in Calcite
+        // as a record with one field.
         final Pair<Integer, RelDataType> pair = cx.map.get(id.name);
-        final List<RexNode> exps = new ArrayList<>();
-        for (RelDataTypeField field : pair.right.getFieldList()) {
-          exps.add(
-              cx.relBuilder.alias(
-                  cx.relBuilder.field(cx.map.size(), pair.left,
-                      field.getIndex()),
-                  field.getName()));
-        }
-        return cx.relBuilder.call(SqlStdOperatorTable.ROW, exps);
+        assert pair.right.getFieldCount() == 1;
+        return cx.relBuilder.field(cx.map.size(), pair.left, 0);
       }
       if (id.name.equals("true") || id.name.equals("false")) {
         return translate(cx, ast.boolLiteral(id.pos, id.name.equals("true")));
@@ -197,35 +235,57 @@ public class CalciteCompiler extends Compiler {
             ((Ast.RecordSelector) apply.fn).name);
       }
       if (apply.fn instanceof Ast.Id) {
-        if (((Ast.Id) apply.fn).name.equals("op +")) {
-          final Ast.Tuple tuple = (Ast.Tuple) apply.arg;
-          return cx.relBuilder.call(SqlStdOperatorTable.PLUS,
-              getTransform(cx, tuple.args));
+        final Ast.Tuple tuple = (Ast.Tuple) apply.arg;
+        final SqlOperator op = DIRECT_OPS.get(((Ast.Id) apply.fn).name);
+        if (op != null) {
+          return cx.relBuilder.call(op, translateList(cx, tuple.args()));
         }
       }
       break;
 
+    case ANDALSO:
+    case ORELSE:
+      final Ast.InfixCall infix = (Ast.InfixCall) exp;
+      final SqlOperator op = DIRECT_OPS2.get(infix.op);
+      return cx.relBuilder.call(op, translateList(cx, infix.args()));
+
     case RECORD:
-      final Ast.Record record = (Ast.Record) exp;
-      return cx.relBuilder.call(SqlStdOperatorTable.ROW,
-          getTransform(cx, record.args));
+      record = (Ast.Record) exp;
+      final RelDataTypeFactory.Builder builder =
+          cx.relBuilder.getTypeFactory().builder();
+      final List<RexNode> operands = new ArrayList<>();
+      record.args.forEach((name, arg) -> {
+        final RexNode e = translate(cx, arg);
+        operands.add(e);
+        builder.add(name, e.getType());
+      });
+      final RelDataType type = builder.build();
+      return cx.relBuilder.getRexBuilder().makeCall(type,
+          SqlStdOperatorTable.ROW, operands);
     }
 
     throw new AssertionError(exp);
   }
 
-  private Iterable<RexNode> getTransform(Context cx, Collection<Ast.Exp> exps) {
+  private Ast.Record toRecord(Context cx, Ast.Id id) {
+    if (cx.map.containsKey(id.name)
+        && cx.env.get(id.name).type instanceof RecordType) {
+      final Pair<Integer, RelDataType> pair = cx.map.get(id.name);
+      final SortedMap<String, Ast.Exp> map = new TreeMap<>();
+      pair.right.getFieldList().forEach(field ->
+          map.put(field.getName(),
+              ast.apply(ast.recordSelector(id.pos, field.getName()), id)));
+      return ast.record(id.pos, map);
+    }
+    return null;
+  }
+
+  private Iterable<RexNode> translateList(Context cx, Collection<Ast.Exp> exps) {
     return Util.transform(exps, a -> translate(cx, a));
   }
 
-  private Iterable<RexNode> getTransform(Context cx,
-      Map<String, Ast.Exp> exps) {
-    return Util.transform(exps.entrySet(), entry ->
-        cx.relBuilder.alias(translate(cx, entry.getValue()), entry.getKey()));
-  }
-
   private void where(Context cx, Ast.Where where) {
-    // TODO:
+    cx.relBuilder.filter(translate(cx, where.exp));
   }
 
   private static EvalEnv evalEnvOf(Environment env) {

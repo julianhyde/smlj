@@ -122,12 +122,16 @@ public class AlgebraTest {
             + "s = \"hello\"}",
         // "from e in scott.emp yield ()",
         "from e in scott.emp yield e",
+        "from e in scott.emp where e.job = \"CLERK\" yield e",
         "from n in [1,2,3] yield n",
+        "from n in [1,2,3] where n mod 2 = 1 andalso n < 3 yield n",
+        "from n in [1,2,3] where false yield n",
+        "from n in [1,2,3] where n < 2 orelse n > 2 yield n * 3",
     };
     for (String query : queries) {
       try {
         checkEqual(query);
-      } catch (RuntimeException e) {
+      } catch (AssertionError | RuntimeException e) {
         throw new RuntimeException("during query [" + query + "]", e);
       }
     }
