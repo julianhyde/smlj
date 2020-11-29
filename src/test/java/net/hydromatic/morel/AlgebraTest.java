@@ -127,6 +127,9 @@ public class AlgebraTest {
         "from n in [1,2,3] where n mod 2 = 1 andalso n < 3 yield n",
         "from n in [1,2,3] where false yield n",
         "from n in [1,2,3] where n < 2 orelse n > 2 yield n * 3",
+        " from r in [{a=1,b=2},{a=1,b=0},{a=2,b=1}]\n"
+            + "  order r.a desc, r.b\n"
+            + "  yield {r.a, b10 = r.b * 10}",
     };
     for (String query : queries) {
       try {

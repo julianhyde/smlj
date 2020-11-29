@@ -43,7 +43,6 @@ import net.hydromatic.morel.type.ListType;
 import net.hydromatic.morel.type.RecordType;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -95,8 +94,8 @@ public class CalciteCompiler extends Compiler {
       final Ast.List list = (Ast.List) expression;
       final Context cx = new Context(env, relBuilder, ImmutableMap.of());
       for (Ast.Exp arg : list.args) {
-        relBuilder.values(new String[] {"T"}, true)
-            .project(translate(cx, arg));
+        relBuilder.values(new String[] {"T"}, true);
+        yield_(cx, arg);
       }
       return relBuilder.union(true, list.args.size()).build();
 
@@ -154,6 +153,9 @@ public class CalciteCompiler extends Compiler {
       switch (fromStep.op) {
       case WHERE:
         where(cx, (Ast.Where) fromStep);
+        break;
+      case ORDER:
+        order(cx, (Ast.Order) fromStep);
         break;
       default:
         throw new AssertionError(fromStep);
@@ -280,12 +282,24 @@ public class CalciteCompiler extends Compiler {
     return null;
   }
 
-  private Iterable<RexNode> translateList(Context cx, Collection<Ast.Exp> exps) {
+  private List<RexNode> translateList(Context cx, List<Ast.Exp> exps) {
     return Util.transform(exps, a -> translate(cx, a));
   }
 
   private void where(Context cx, Ast.Where where) {
     cx.relBuilder.filter(translate(cx, where.exp));
+  }
+
+  private void order(Context cx, Ast.Order order) {
+    final List<RexNode> exps = new ArrayList<>();
+    order.orderItems.forEach(i -> {
+      RexNode exp = translate(cx, i.exp);
+      if (i.direction == Ast.Direction.DESC) {
+        exp = cx.relBuilder.desc(exp);
+      }
+      exps.add(exp);
+    });
+    cx.relBuilder.sort(exps);
   }
 
   private static EvalEnv evalEnvOf(Environment env) {
