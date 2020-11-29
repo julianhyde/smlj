@@ -24,6 +24,7 @@ import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeField;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
@@ -324,9 +325,8 @@ class Ml {
     static Function<Enumerable<Object[]>, List<Object>> fromEnumerable(RelNode rel,
         Type type) {
       final ListType listType = (ListType) type;
-      final RelDataType rowType = rel.getRowType();
       final Function<Object[], Object> elementConverter =
-          forType(rowType, listType.elementType);
+          forType(rel.getRowType(), listType.elementType);
       return iterable ->
           Lists.newArrayList(
               Iterables.transform(iterable, elementConverter::apply));
@@ -337,7 +337,13 @@ class Ml {
         return o -> Unit.INSTANCE;
       }
       if (type instanceof RecordType) {
-        return new CalciteForeignValue.Converter(fromType, true);
+        return CalciteForeignValue.Converter.createRecord(true,
+            fromType.getFieldList());
+      }
+      if (type instanceof PrimitiveType) {
+        RelDataTypeField field =
+            Iterables.getOnlyElement(fromType.getFieldList());
+        return CalciteForeignValue.Converter.createField(field.getType());
       }
       if (fromType.isNullable()) {
         return o -> o == null ? BigDecimal.ZERO : o;

@@ -49,7 +49,8 @@ public class AlgebraTest {
   /** As previous, but with more concise syntax. */
   @Test public void testScott2() {
     final String ml = "from e in scott.emp yield e.deptno";
-    final String plan = "LogicalTableScan(table=[[scott, EMP]])\n";
+    final String plan = "LogicalProject(deptno=[$7])\n"
+        + "  JdbcTableScan(table=[[scott, EMP]])\n";
     ml(ml)
         .withBinding("scott", BuiltInDataSet.SCOTT)
         .assertType("int list")
@@ -112,9 +113,23 @@ public class AlgebraTest {
         "from",
         "from e in scott.emp",
         "from e in scott.emp yield e.deptno",
+        "from e in scott.emp yield {e.deptno, e.ename}",
+        "from e in scott.emp yield {e.ename, e.deptno}",
+        "from e in scott.emp yield {e.ename, x = e.deptno + e.empno, b = true, "
+            // + "c = #\"c\", "
+            + "i = 3, r = 3.14, "
+            // + "u = (), "
+            + "s = \"hello\"}",
+        // "from e in scott.emp yield ()",
+        "from e in scott.emp yield e",
+        "from n in [1,2,3] yield n",
     };
     for (String query : queries) {
-      checkEqual(query);
+      try {
+        checkEqual(query);
+      } catch (RuntimeException e) {
+        throw new RuntimeException("during query [" + query + "]", e);
+      }
     }
   }
 

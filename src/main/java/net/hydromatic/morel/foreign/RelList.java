@@ -34,10 +34,10 @@ import java.util.function.Supplier;
 public class RelList extends AbstractList<Object> {
   public final RelNode rel;
 
-  private final Supplier<List<List<Object>>> supplier;
+  private final Supplier<List<Object>> supplier;
 
   RelList(RelNode rel, DataContext dataContext,
-      Function<Object[], List<Object>> converter) {
+      Function<Object[], Object> converter) {
     this.rel = rel;
     supplier = Suppliers.memoize(() ->
         new Interpreter(dataContext, rel)
