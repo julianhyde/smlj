@@ -27,9 +27,9 @@ import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
-import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 
 import net.hydromatic.morel.ast.Ast;
@@ -37,11 +37,15 @@ import net.hydromatic.morel.ast.Op;
 import net.hydromatic.morel.eval.Code;
 import net.hydromatic.morel.eval.EvalEnv;
 import net.hydromatic.morel.eval.EvalEnvs;
+import net.hydromatic.morel.eval.Unit;
 import net.hydromatic.morel.foreign.RelList;
 import net.hydromatic.morel.type.Binding;
 import net.hydromatic.morel.type.ListType;
 import net.hydromatic.morel.type.RecordType;
+import net.hydromatic.morel.type.Type;
+import net.hydromatic.morel.util.Pair;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -50,6 +54,7 @@ import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import static net.hydromatic.morel.ast.AstBuilder.ast;
 
@@ -72,7 +77,7 @@ public class CalciteCompiler extends Compiler {
           .put("op mod", SqlStdOperatorTable.MOD)
           .build();
 
-  static final Map<Op, SqlOperator> DIRECT_OPS2 =
+  static final Map<Op, SqlOperator> INFIX_OPERATORS =
       ImmutableMap.<Op, SqlOperator>builder()
           .put(Op.ANDALSO, SqlStdOperatorTable.AND)
           .put(Op.ORELSE, SqlStdOperatorTable.OR)
@@ -133,7 +138,7 @@ public class CalciteCompiler extends Compiler {
         }
       });
     }
-    final Map<String, Pair<Integer, RelDataType>> map = new HashMap<>();
+    final Map<String, Function<RelBuilder, RexNode>> map = new HashMap<>();
     if (sourceCodes.size() == 0) {
       relBuilder.values(new String[] {"ZERO"}, 0);
     } else {
@@ -142,20 +147,24 @@ public class CalciteCompiler extends Compiler {
         relBuilder.push(r);
         if (pat instanceof Ast.IdPat) {
           relBuilder.as(((Ast.IdPat) pat).name);
-          map.put(((Ast.IdPat) pat).name,
-              Pair.of(i.getAndAdd(r.getRowType().getFieldCount()),
-                  r.getRowType()));
+          final int inputCount = sourceCodes.size();
+          final int input = i.getAndIncrement();
+          map.put(((Ast.IdPat) pat).name, b ->
+              b.field(inputCount, input, 0));
         }
       });
     }
-    final Context cx = new Context(env.bindAll(bindings), relBuilder, map);
+    Context cx = new Context(env.bindAll(bindings), relBuilder, map);
     for (Ast.FromStep fromStep : from.steps) {
       switch (fromStep.op) {
       case WHERE:
-        where(cx, (Ast.Where) fromStep);
+        cx = where(cx, (Ast.Where) fromStep);
         break;
       case ORDER:
-        order(cx, (Ast.Order) fromStep);
+        cx = order(cx, (Ast.Order) fromStep);
+        break;
+      case GROUP:
+        cx = group(cx, (Ast.Group) fromStep);
         break;
       default:
         throw new AssertionError(fromStep);
@@ -212,6 +221,29 @@ public class CalciteCompiler extends Compiler {
       // In 'from e in emps yield e', 'e' expands to a record,
       // '{e.deptno, e.ename}'
       final Ast.Id id = (Ast.Id) exp;
+      final Binding binding = cx.env.getOpt(id.name);
+      if (binding != null && binding.value != Unit.INSTANCE) {
+        if (binding.value instanceof Boolean) {
+          final Boolean b = (Boolean) binding.value;
+          return translate(cx, ast.boolLiteral(id.pos, b));
+        }
+        if (binding.value instanceof Character) {
+          final Character c = (Character) binding.value;
+          return translate(cx, ast.charLiteral(id.pos, c));
+        }
+        if (binding.value instanceof Integer) {
+          final BigDecimal bd = BigDecimal.valueOf((Integer) binding.value);
+          return translate(cx, ast.intLiteral(id.pos, bd));
+        }
+        if (binding.value instanceof Float) {
+          final BigDecimal bd = BigDecimal.valueOf((Float) binding.value);
+          return translate(cx, ast.realLiteral(id.pos, bd));
+        }
+        if (binding.value instanceof String) {
+          final String s = (String) binding.value;
+          return translate(cx, ast.stringLiteral(id.pos, s));
+        }
+      }
       record = toRecord(cx, id);
       if (record != null) {
         return translate(cx, record);
@@ -219,12 +251,8 @@ public class CalciteCompiler extends Compiler {
       if (cx.map.containsKey(id.name)) {
         // Not a record, so must be a scalar. It is represented in Calcite
         // as a record with one field.
-        final Pair<Integer, RelDataType> pair = cx.map.get(id.name);
-        assert pair.right.getFieldCount() == 1;
-        return cx.relBuilder.field(cx.map.size(), pair.left, 0);
-      }
-      if (id.name.equals("true") || id.name.equals("false")) {
-        return translate(cx, ast.boolLiteral(id.pos, id.name.equals("true")));
+        final Function<RelBuilder, RexNode> fn = cx.map.get(id.name);
+        return fn.apply(cx.relBuilder);
       }
       break;
 
@@ -248,7 +276,7 @@ public class CalciteCompiler extends Compiler {
     case ANDALSO:
     case ORELSE:
       final Ast.InfixCall infix = (Ast.InfixCall) exp;
-      final SqlOperator op = DIRECT_OPS2.get(infix.op);
+      final SqlOperator op = INFIX_OPERATORS.get(infix.op);
       return cx.relBuilder.call(op, translateList(cx, infix.args()));
 
     case RECORD:
@@ -266,17 +294,16 @@ public class CalciteCompiler extends Compiler {
           SqlStdOperatorTable.ROW, operands);
     }
 
-    throw new AssertionError(exp);
+    throw new AssertionError("cannot translate " + exp.op + " [" + exp + "]");
   }
 
   private Ast.Record toRecord(Context cx, Ast.Id id) {
-    if (cx.map.containsKey(id.name)
-        && cx.env.get(id.name).type instanceof RecordType) {
-      final Pair<Integer, RelDataType> pair = cx.map.get(id.name);
+    final Type type = cx.env.get(id.name).type;
+    if (type instanceof RecordType) {
       final SortedMap<String, Ast.Exp> map = new TreeMap<>();
-      pair.right.getFieldList().forEach(field ->
-          map.put(field.getName(),
-              ast.apply(ast.recordSelector(id.pos, field.getName()), id)));
+      ((RecordType) type).argNameTypes.keySet().forEach(field ->
+          map.put(field,
+              ast.apply(ast.recordSelector(id.pos, field), id)));
       return ast.record(id.pos, map);
     }
     return null;
@@ -286,11 +313,12 @@ public class CalciteCompiler extends Compiler {
     return Util.transform(exps, a -> translate(cx, a));
   }
 
-  private void where(Context cx, Ast.Where where) {
+  private Context where(Context cx, Ast.Where where) {
     cx.relBuilder.filter(translate(cx, where.exp));
+    return cx;
   }
 
-  private void order(Context cx, Ast.Order order) {
+  private Context order(Context cx, Ast.Order order) {
     final List<RexNode> exps = new ArrayList<>();
     order.orderItems.forEach(i -> {
       RexNode exp = translate(cx, i.exp);
@@ -300,6 +328,35 @@ public class CalciteCompiler extends Compiler {
       exps.add(exp);
     });
     cx.relBuilder.sort(exps);
+    return cx;
+  }
+
+  private Context group(Context cx, Ast.Group group) {
+    final Map<String, Function<RelBuilder, RexNode>> map = new HashMap<>();
+    final List<Binding> bindings = new ArrayList<>();
+    final List<RexNode> nodes = new ArrayList<>();
+    final AtomicInteger ai = new AtomicInteger();
+    Pair.forEach(group.groupExps, (id, exp) -> {
+      bindings.add(Binding.of(id.name, typeMap.getType(id)));
+      nodes.add(translate(cx, exp));
+      final int i = ai.getAndIncrement();
+      map.put(id.name, b -> b.field(1, 0, i));
+    });
+    final RelBuilder.GroupKey groupKey = cx.relBuilder.groupKey(nodes);
+    final List<RelBuilder.AggCall> aggregateCalls = new ArrayList<>();
+    group.aggregates.forEach(aggregate -> {
+      bindings.add(Binding.of(aggregate.id.name, typeMap.getType(aggregate)));
+      aggregateCalls.add(
+          cx.relBuilder.aggregateCall(SqlStdOperatorTable.SUM, // TODO:
+              aggregate.argument == null
+              ? ImmutableList.of()
+              : ImmutableList.of(translate(cx, aggregate.argument)))
+              .as(aggregate.id.name));
+      final int i = ai.getAndIncrement();
+      map.put(aggregate.id.name, b -> b.field(1, 0, i));
+    });
+    cx.relBuilder.aggregate(groupKey, aggregateCalls);
+    return new Context(cx.env.bindAll(bindings), cx.relBuilder, map);
   }
 
   private static EvalEnv evalEnvOf(Environment env) {
@@ -313,10 +370,10 @@ public class CalciteCompiler extends Compiler {
   static class Context {
     final Environment env;
     final RelBuilder relBuilder;
-    final Map<String, Pair<Integer, RelDataType>> map;
+    final Map<String, Function<RelBuilder, RexNode>> map;
 
     Context(Environment env, RelBuilder relBuilder,
-        Map<String, Pair<Integer, RelDataType>> map) {
+        Map<String, Function<RelBuilder, RexNode>> map) {
       this.env = env;
       this.relBuilder = relBuilder;
       this.map = map;
