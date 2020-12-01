@@ -19,13 +19,10 @@
 package net.hydromatic.morel;
 
 import org.apache.calcite.adapter.jdbc.JdbcSchema;
-import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.schema.SchemaPlus;
-import org.apache.calcite.tools.RelBuilder;
-
-import com.google.common.base.Suppliers;
 
 import net.hydromatic.foodmart.data.hsqldb.FoodmartHsqldb;
+import net.hydromatic.morel.foreign.Calcite;
 import net.hydromatic.morel.foreign.CalciteForeignValue;
 import net.hydromatic.morel.foreign.DataSet;
 import net.hydromatic.morel.foreign.ForeignValue;
@@ -35,7 +32,6 @@ import java.util.AbstractMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.annotation.Nonnull;
@@ -55,8 +51,14 @@ enum BuiltInDataSet implements DataSet {
    * </ul>
    */
   FOODMART {
-    SchemaPlus schema() {
-      return FOODMART_SCHEMA.get();
+    SchemaPlus schema(SchemaPlus rootSchema) {
+      final DataSource dataSource =
+          JdbcSchema.dataSource(FoodmartHsqldb.URI, null, FoodmartHsqldb.USER,
+              FoodmartHsqldb.PASSWORD);
+      final String name = "foodmart";
+      final JdbcSchema schema =
+          JdbcSchema.create(rootSchema, name, dataSource, null, "foodmart");
+      return rootSchema.add(name, schema);
     }
   },
 
@@ -72,8 +74,14 @@ enum BuiltInDataSet implements DataSet {
    * </ul>
    */
   SCOTT {
-    SchemaPlus schema() {
-      return SCOTT_SCHEMA.get();
+    SchemaPlus schema(SchemaPlus rootSchema) {
+      final DataSource dataSource =
+          JdbcSchema.dataSource(ScottHsqldb.URI, null, ScottHsqldb.USER,
+              ScottHsqldb.PASSWORD);
+      final String name = "scott";
+      final JdbcSchema schema =
+          JdbcSchema.create(rootSchema, name, dataSource, null, "SCOTT");
+      return rootSchema.add(name, schema);
     }
   };
 
@@ -87,41 +95,11 @@ enum BuiltInDataSet implements DataSet {
                   d -> d));
 
   /** Returns the Calcite schema of this data set. */
-  abstract SchemaPlus schema();
+  abstract SchemaPlus schema(SchemaPlus rootSchema);
 
-  @Override public ForeignValue foreignValue(RelBuilder relBuilder) {
-    return new CalciteForeignValue(schema(), true);
+  @Override public ForeignValue foreignValue(Calcite calcite) {
+    return new CalciteForeignValue(calcite, schema(calcite.rootSchema), true);
   }
-
-  /** Supplier for the root schema. */
-  private static final Supplier<SchemaPlus> ROOT_SCHEMA =
-      Suppliers.memoize(() -> CalciteSchema.createRootSchema(false).plus());
-
-  /** Supplier for the Scott schema. */
-  private static final Supplier<SchemaPlus> SCOTT_SCHEMA =
-      Suppliers.memoize(() -> {
-        final DataSource dataSource =
-            JdbcSchema.dataSource(ScottHsqldb.URI, null, ScottHsqldb.USER,
-                ScottHsqldb.PASSWORD);
-        final String name = "scott";
-        final SchemaPlus rootSchema = ROOT_SCHEMA.get();
-        final JdbcSchema schema =
-            JdbcSchema.create(rootSchema, name, dataSource, null, "SCOTT");
-        return rootSchema.add(name, schema);
-      });
-
-  /** Supplier for the Foodmart schema. */
-  private static final Supplier<SchemaPlus> FOODMART_SCHEMA =
-      Suppliers.memoize(() -> {
-        final DataSource dataSource =
-            JdbcSchema.dataSource(FoodmartHsqldb.URI, null, FoodmartHsqldb.USER,
-                FoodmartHsqldb.PASSWORD);
-        final String name = "foodmart";
-        final SchemaPlus rootSchema = ROOT_SCHEMA.get();
-        final JdbcSchema schema =
-            JdbcSchema.create(rootSchema, name, dataSource, null, "foodmart");
-        return rootSchema.add(name, schema);
-      });
 
   /** Map of built-in data sets.
    *

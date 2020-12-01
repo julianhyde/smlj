@@ -65,7 +65,7 @@ public class Calcite {
       final ImmutableMap.Builder<String, ForeignValue> b =
           ImmutableMap.builder();
       dataSetMap.forEach((name, dataSet) ->
-          b.put(name, dataSet.foreignValue(relBuilder)));
+          b.put(name, dataSet.foreignValue(this)));
       this.valueMap = b.build();
     }
 

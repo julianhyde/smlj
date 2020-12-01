@@ -18,12 +18,10 @@
  */
 package net.hydromatic.morel.foreign;
 
-import org.apache.calcite.tools.RelBuilder;
-
 /** Data set for testing. */
 public interface DataSet {
   /** Returns this data set as a foreign value. */
-  ForeignValue foreignValue(RelBuilder relBuilder);
+  ForeignValue foreignValue(Calcite calcite);
 }
 
 // End DataSet.java
