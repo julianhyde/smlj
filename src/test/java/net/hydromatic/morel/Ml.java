@@ -32,6 +32,8 @@ import net.hydromatic.morel.compile.TypeResolver;
 import net.hydromatic.morel.eval.Code;
 import net.hydromatic.morel.eval.Codes;
 import net.hydromatic.morel.eval.EvalEnv;
+import net.hydromatic.morel.foreign.Calcite;
+import net.hydromatic.morel.foreign.DataSet;
 import net.hydromatic.morel.parse.MorelParserImpl;
 import net.hydromatic.morel.parse.ParseException;
 import net.hydromatic.morel.type.TypeSystem;
@@ -154,9 +156,9 @@ class Ml {
     return withParser(parser -> {
       try {
         final Ast.Exp expression = parser.expression();
-        final Calcite calcite = new Calcite(dataSetMap);
+        final Calcite calcite = Calcite.withDataSets(dataSetMap);
         final TypeResolver.Resolved resolved =
-            Compiles.validateExpression(expression, calcite.valueMap);
+            Compiles.validateExpression(expression, calcite.foreignValues());
         final Ast.Exp resolvedExp =
             Compiles.toExp((Ast.ValDecl) resolved.node);
         action.accept(resolvedExp, resolved.typeMap);
@@ -205,8 +207,9 @@ class Ml {
     try {
       final Ast.Exp e = new MorelParserImpl(new StringReader(ml)).expression();
       final TypeSystem typeSystem = new TypeSystem();
-      final Calcite calcite = new Calcite(dataSetMap);
-      final Environment env = Environments.env(typeSystem, calcite.valueMap);
+      final Calcite calcite = Calcite.withDataSets(dataSetMap);
+      final Environment env =
+          Environments.env(typeSystem, calcite.foreignValues());
       final Ast.ValDecl valDecl = Compiles.toValDecl(e);
       final TypeResolver.Resolved resolved =
           TypeResolver.deduceType(env, valDecl, typeSystem);

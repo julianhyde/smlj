@@ -27,14 +27,18 @@ import com.google.common.base.Suppliers;
 
 import net.hydromatic.foodmart.data.hsqldb.FoodmartHsqldb;
 import net.hydromatic.morel.foreign.CalciteForeignValue;
+import net.hydromatic.morel.foreign.DataSet;
 import net.hydromatic.morel.foreign.ForeignValue;
 import net.hydromatic.scott.data.hsqldb.ScottHsqldb;
 
+import java.util.AbstractMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.annotation.Nonnull;
 import javax.sql.DataSource;
 
 /** Data sets for testing. */
@@ -118,6 +122,16 @@ enum BuiltInDataSet implements DataSet {
             JdbcSchema.create(rootSchema, name, dataSource, null, "foodmart");
         return rootSchema.add(name, schema);
       });
+
+  /** Map of built-in data sets.
+   *
+   * <p>Typically passed to {@link Shell} via the {@code --foreign} argument. */
+  @SuppressWarnings("unused")
+  public static class Dictionary extends AbstractMap<String, DataSet> {
+    @Override @Nonnull public Set<Entry<String, DataSet>> entrySet() {
+      return DICTIONARY.entrySet();
+    }
+  }
 }
 
 // End BuiltInDataSet.java

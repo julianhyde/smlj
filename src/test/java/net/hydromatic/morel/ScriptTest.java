@@ -22,6 +22,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.io.PatternFilenameFilter;
 
+import net.hydromatic.morel.foreign.Calcite;
 import net.hydromatic.morel.foreign.ForeignValue;
 
 import org.incava.diff.Diff;
@@ -154,7 +155,7 @@ public class ScriptTest {
             || inFile.getPath().contains("blog.sml");
     final Map<String, ForeignValue> dictionary =
         loadDictionary
-            ? new Calcite(BuiltInDataSet.DICTIONARY).valueMap
+            ? Calcite.withDataSets(BuiltInDataSet.DICTIONARY).foreignValues()
             : ImmutableMap.of();
     try (Reader reader = Utils.reader(inFile);
          Writer writer = Utils.printWriter(outFile)) {

@@ -16,14 +16,12 @@
  * language governing permissions and limitations under the
  * License.
  */
-package net.hydromatic.morel;
+package net.hydromatic.morel.foreign;
 
 import org.apache.calcite.tools.RelBuilder;
 
-import net.hydromatic.morel.foreign.ForeignValue;
-
 /** Data set for testing. */
-interface DataSet {
+public interface DataSet {
   /** Returns this data set as a foreign value. */
   ForeignValue foreignValue(RelBuilder relBuilder);
 }
