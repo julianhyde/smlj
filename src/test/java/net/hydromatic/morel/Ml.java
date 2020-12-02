@@ -21,6 +21,7 @@ package net.hydromatic.morel;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.interpreter.Interpreter;
 import org.apache.calcite.linq4j.Enumerable;
+import org.apache.calcite.linq4j.Enumerator;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
@@ -28,7 +29,6 @@ import org.apache.calcite.rel.type.RelDataTypeField;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 
 import net.hydromatic.morel.ast.Ast;
 import net.hydromatic.morel.ast.AstNode;
@@ -59,6 +59,7 @@ import org.hamcrest.Matcher;
 
 import java.io.StringReader;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
@@ -327,9 +328,15 @@ class Ml {
       final ListType listType = (ListType) type;
       final Function<Object[], Object> elementConverter =
           forType(rel.getRowType(), listType.elementType);
-      return iterable ->
-          Lists.newArrayList(
-              Iterables.transform(iterable, elementConverter::apply));
+      return iterable -> {
+        final List<Object> list = new ArrayList<>();
+        final Enumerator<Object[]> enumerator = iterable.enumerator();
+        while (enumerator.moveNext()) {
+          list.add(elementConverter.apply(enumerator.current()));
+        }
+        enumerator.close();
+        return list;
+      };
     }
 
     static Function forType(RelDataType fromType, Type type) {
@@ -337,13 +344,13 @@ class Ml {
         return o -> Unit.INSTANCE;
       }
       if (type instanceof RecordType) {
-        return CalciteForeignValue.Converter.createRecord(true,
-            fromType.getFieldList());
+        return CalciteForeignValue.Converters.ofRow2(fromType,
+            (RecordType) type);
       }
       if (type instanceof PrimitiveType) {
         RelDataTypeField field =
             Iterables.getOnlyElement(fromType.getFieldList());
-        return CalciteForeignValue.Converter.createField(field.getType());
+        return CalciteForeignValue.Converters.ofField(field.getType(), 0);
       }
       if (fromType.isNullable()) {
         return o -> o == null ? BigDecimal.ZERO : o;

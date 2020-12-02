@@ -117,7 +117,8 @@ public class AlgebraTest {
         "from e in scott.emp yield e.deptno",
         "from e in scott.emp yield {e.deptno, e.ename}",
         "from e in scott.emp yield {e.ename, e.deptno}",
-        "from e in scott.emp yield {e.ename, x = e.deptno + e.empno, b = true, "
+        "from e in scott.emp\n"
+            + "  yield {e.ename, x = e.deptno + e.empno, b = true, "
             // + "c = #\"c\", "
             + "i = 3, r = 3.14, "
             // + "u = (), "
@@ -140,6 +141,27 @@ public class AlgebraTest {
         "from r in [{a=2,b=3}]\n"
             + "group r.a compute sb = sum of r.b\n"
             + "yield {a, a2 = a + a, sb}",
+        "from e in scott.emp,\n"
+            + "  d in scott.dept\n"
+            + "where e.deptno = d.deptno\n"
+            + "yield {e.ename, d.dname}",
+        "from e in scott.emp,\n"
+            + "  d in scott.dept\n"
+            + "where e.deptno = d.deptno",
+        "from e in scott.emp,\n"
+            + "  d in scott.dept\n"
+            + "where e.deptno = d.deptno\n"
+            + "yield e",
+        "from e in scott.emp,\n"
+            + "  d in scott.dept\n"
+            + "where e.deptno = d.deptno\n"
+            + "andalso e.job = \"CLERK\"\n"
+            + "yield d",
+        "from e in scott.emp,\n"
+            + "  d in scott.dept\n"
+            + "where e.deptno = d.deptno\n"
+            + "andalso e.job = \"CLERK\"\n"
+            + "group e.mgr",
     };
     Stream.of(queries).forEach(query -> {
       try {

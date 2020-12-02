@@ -31,7 +31,6 @@ import org.apache.calcite.util.ImmutableNullableList;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.Ordering;
 
 import net.hydromatic.morel.type.PrimitiveType;
 import net.hydromatic.morel.type.RecordType;
@@ -42,11 +41,12 @@ import net.hydromatic.morel.util.Ord;
 import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
-import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -81,7 +81,8 @@ public class CalciteForeignValue implements ForeignValue {
     table.getRowType(calcite.typeFactory)
         .getFieldList()
         .forEach(field ->
-            fields.put(convert(field.getName()), toType(field.getType()).mlType));
+            fields.put(convert(field.getName()),
+                FieldConverter.toType(field.getType()).mlType));
     return typeSystem.listType(typeSystem.recordType(fields.build()));
   }
 
@@ -91,70 +92,6 @@ public class CalciteForeignValue implements ForeignValue {
 
   private static String convert(boolean lower, String name) {
     return lower ? name.toLowerCase(Locale.ROOT) : name;
-  }
-
-  private static FieldConverter toType(RelDataType type) {
-    switch (type.getSqlTypeName()) {
-    case BOOLEAN:
-      return new FieldConverter(PrimitiveType.BOOL) {
-        public Boolean convertFrom(Object o) {
-          return (Boolean) o;
-        }
-      };
-
-    case TINYINT:
-    case SMALLINT:
-    case INTEGER:
-    case BIGINT:
-      return new FieldConverter(PrimitiveType.INT) {
-        public Integer convertFrom(Object o) {
-          return o == null ? 0 : ((Number) o).intValue();
-        }
-      };
-
-    case FLOAT:
-    case REAL:
-    case DOUBLE:
-    case DECIMAL:
-      return new FieldConverter(PrimitiveType.REAL) {
-        public Float convertFrom(Object o) {
-          return o == null ? 0f : ((Number) o).floatValue();
-        }
-      };
-
-    case DATE:
-      return new FieldConverter(PrimitiveType.STRING) {
-        public String convertFrom(Object o) {
-          return o == null ? ""
-              : new Date((Integer) o * DateTimeUtils.MILLIS_PER_DAY).toString();
-        }
-      };
-
-    case TIME:
-      return new FieldConverter(PrimitiveType.STRING) {
-        public String convertFrom(Object o) {
-          return o == null ? ""
-              : new Time((Integer) o % DateTimeUtils.MILLIS_PER_DAY).toString();
-        }
-      };
-
-    case TIMESTAMP:
-      return new FieldConverter(PrimitiveType.STRING) {
-        public String convertFrom(Object o) {
-          return o == null ? ""
-              : new Timestamp((Long) o).toString();
-        }
-      };
-
-    case VARCHAR:
-    case CHAR:
-    default:
-      return new FieldConverter(PrimitiveType.STRING) {
-        public String convertFrom(Object o) {
-          return o == null ? "" : (String) o;
-        }
-      };
-    }
   }
 
   public Object value() {
@@ -174,8 +111,7 @@ public class CalciteForeignValue implements ForeignValue {
           .collect(Collectors.toList());
       b.project(exprList, ImmutableList.of(), true);
       final RelNode rel = b.build();
-      final Converter converter =
-          Converter.createRecord(lower, rel.getRowType().getFieldList());
+      final Converter converter = Converters.ofRow(rel.getRowType());
       fieldValues.add(new RelList(rel, calcite.dataContext, converter));
     });
     return fieldValues.build();
@@ -186,47 +122,119 @@ public class CalciteForeignValue implements ForeignValue {
     return ImmutableList.<E>builder().addAll(list).add(e).build();
   }
 
-  /** Converts from a Calcite row to an SML record.
+  /** Utilities for Converter. */
+  public static class Converters {
+    public static Converter ofRow(RelDataType rowType) {
+      final List<RelDataTypeField> fields = rowType.getFieldList();
+      final List<Converter> converters = new ArrayList<>();
+      Ord.forEach(fields, (field, i) ->
+          converters.add(ofField(field.getType(), i)));
+      return new RecordConverter(converters);
+    }
+
+    public static Converter ofRow2(RelDataType rowType, RecordType type) {
+      AtomicInteger ordinal = new AtomicInteger();
+      return ofRow3(rowType.getFieldList(), ordinal, type);
+    }
+
+    static Converter ofRow3(List<RelDataTypeField> fields,
+        AtomicInteger ordinal, RecordType type) {
+      final List<Converter> converters = new ArrayList<>();
+      for (Type fieldType : type.argNameTypes.values()) {
+        converters.add(ofField2(fields, ordinal, fieldType));
+      }
+      return new RecordConverter(converters);
+    }
+
+    public static Converter ofField(RelDataType type, int ordinal) {
+      final FieldConverter fieldConverter = FieldConverter.toType(type);
+      return values -> fieldConverter.convertFrom(values[ordinal]);
+    }
+
+    static Converter ofField2(List<RelDataTypeField> fields,
+        AtomicInteger ordinal, Type type) {
+      if (type instanceof RecordType) {
+        return ofRow3(fields, ordinal, (RecordType) type);
+      }
+      final int i = ordinal.getAndIncrement();
+      return ofField3(fields.get(i), i, type);
+    }
+
+    static Converter ofField3(RelDataTypeField field, int ordinal,
+        Type type) {
+      final FieldConverter fieldConverter =
+          FieldConverter.toType(field.getType());
+      return values -> fieldConverter.convertFrom(values[ordinal]);
+    }
+  }
+
+  /** Converts from a Calcite row to a Morel value (often a record).
    *
    * <p>The Calcite row is represented as an array, ordered by field ordinal;
    * the SML record is represented by a list, ordered by field name
    * (lower-case if {@link #lower}). */
-  public static class Converter implements Function<Object[], Object> {
+  public interface Converter extends Function<Object[], Object> {
+  }
+
+  /** Converter that creates a record. Uses one sub-Converter per output
+   * field. */
+  static class RecordConverter implements Converter {
     final Object[] tempValues;
-    final FieldConverter[] fieldConverters;
+    final Converter[] converters;
 
-    public Converter(List<RelDataTypeField> fields) {
-      tempValues = new Object[fields.size()];
-      fieldConverters = new FieldConverter[fields.size()];
-      for (int i = 0; i < fieldConverters.length; i++) {
-        fieldConverters[i] = toType(fields.get(i).getType());
-      }
+    RecordConverter(List<Converter> converterList) {
+      tempValues = new Object[converterList.size()];
+      converters = converterList.toArray(new Converter[0]);
     }
 
-    public static Converter createRecord(boolean lower, List<RelDataTypeField> fields) {
-      final Ordering<RelDataTypeField> ordering =
-          Ordering.from(
-              Comparator.comparing(lower
-                  ? f -> f.getName().toLowerCase(Locale.ROOT)
-                  : RelDataTypeField::getName));
-      return new Converter(ordering.immutableSortedCopy(fields));
-    }
-
-    public static Function<Object[], Object> createField(RelDataType type) {
-      final FieldConverter fieldConverter = toType(type);
-      return values -> fieldConverter.convertFrom(values[0]);
-    }
-
-    public List<Object> apply(Object[] a) {
+    @Override public List<Object> apply(Object[] a) {
       for (int i = 0; i < tempValues.length; i++) {
-        tempValues[i] = fieldConverters[i].convertFrom(a[i]);
+        tempValues[i] = converters[i].apply(a);
       }
       return ImmutableNullableList.copyOf(tempValues);
     }
   }
 
-  /** Converts a field from Calcite to SML format. */
-  private abstract static class FieldConverter {
+  /** Converts a field from Calcite to Morel format. */
+  enum FieldConverter {
+    FROM_BOOLEAN(PrimitiveType.BOOL) {
+      public Boolean convertFrom(Object o) {
+        return (Boolean) o;
+      }
+    },
+    FROM_INTEGER(PrimitiveType.INT) {
+      public Integer convertFrom(Object o) {
+        return o == null ? 0 : ((Number) o).intValue();
+      }
+    },
+    FROM_FLOAT(PrimitiveType.REAL) {
+      public Float convertFrom(Object o) {
+        return o == null ? 0f : ((Number) o).floatValue();
+      }
+    },
+    FROM_DATE(PrimitiveType.STRING) {
+      public String convertFrom(Object o) {
+        return o == null ? "" : new Date(
+            (Integer) o * DateTimeUtils.MILLIS_PER_DAY).toString();
+      }
+    },
+    FROM_TIME(PrimitiveType.STRING) {
+      public String convertFrom(Object o) {
+        return o == null ? "" : new Time(
+            (Integer) o % DateTimeUtils.MILLIS_PER_DAY).toString();
+      }
+    },
+    FROM_TIMESTAMP(PrimitiveType.STRING) {
+      public String convertFrom(Object o) {
+        return o == null ? "" : new Timestamp((Long) o).toString();
+      }
+    },
+    FROM_STRING(PrimitiveType.STRING) {
+      public String convertFrom(Object o) {
+        return o == null ? "" : (String) o;
+      }
+    };
+
     final Type mlType;
 
     FieldConverter(Type mlType) {
@@ -235,6 +243,39 @@ public class CalciteForeignValue implements ForeignValue {
 
     /** Given a Calcite row, returns the value of this field in SML format. */
     public abstract Object convertFrom(Object sourceValue);
+
+    static FieldConverter toType(RelDataType type) {
+      switch (type.getSqlTypeName()) {
+      case BOOLEAN:
+        return FROM_BOOLEAN;
+
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case BIGINT:
+        return FROM_INTEGER;
+
+      case FLOAT:
+      case REAL:
+      case DOUBLE:
+      case DECIMAL:
+        return FROM_FLOAT;
+
+      case DATE:
+        return FROM_DATE;
+
+      case TIME:
+        return FROM_TIME;
+
+      case TIMESTAMP:
+        return FROM_TIMESTAMP;
+
+      case VARCHAR:
+      case CHAR:
+      default:
+        return FROM_STRING;
+      }
+    }
   }
 }
 

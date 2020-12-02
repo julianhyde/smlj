@@ -19,6 +19,7 @@
 package net.hydromatic.morel.compile;
 
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexNode;
@@ -29,6 +30,8 @@ import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.Util;
 
+import com.google.common.collect.BiMap;
+import com.google.common.collect.HashBiMap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 
@@ -47,6 +50,7 @@ import net.hydromatic.morel.util.Pair;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -97,7 +101,7 @@ public class CalciteCompiler extends Compiler {
     case LIST:
       // For example, 'from n in [1, 2, 3]'
       final Ast.List list = (Ast.List) expression;
-      final Context cx = new Context(env, relBuilder, ImmutableMap.of());
+      final Context cx = new Context(env, relBuilder, ImmutableMap.of(), 0);
       for (Ast.Exp arg : list.args) {
         relBuilder.values(new String[] {"T"}, true);
         yield_(cx, arg);
@@ -142,19 +146,57 @@ public class CalciteCompiler extends Compiler {
     if (sourceCodes.size() == 0) {
       relBuilder.values(new String[] {"ZERO"}, 0);
     } else {
-      final AtomicInteger i = new AtomicInteger();
-      sourceCodes.forEach((pat, r) -> {
+      final SortedMap<String, VarData> varOffsets = new TreeMap<>();
+      final int inputCount = sourceCodes.size();
+      final List<Integer> widths = new ArrayList<>();
+      final List<Integer> offsets = new ArrayList<>();
+      int i = 0;
+      int offset = 0;
+      for (Map.Entry<Ast.Pat, RelNode> pair : sourceCodes.entrySet()) {
+        final Ast.Pat pat = pair.getKey();
+        final RelNode r = pair.getValue();
         relBuilder.push(r);
         if (pat instanceof Ast.IdPat) {
           relBuilder.as(((Ast.IdPat) pat).name);
-          final int inputCount = sourceCodes.size();
-          final int input = i.getAndIncrement();
+          final int finalOffset = offset;
           map.put(((Ast.IdPat) pat).name, b ->
-              b.field(inputCount, input, 0));
+              b.getRexBuilder().makeRangeReference(r.getRowType(), finalOffset,
+                  false));
+          varOffsets.put(((Ast.IdPat) pat).name,
+              new VarData(typeMap.getType(pat), offset, r.getRowType()));
         }
-      });
+        final int width = r.getRowType().getFieldCount();
+        widths.add(width);
+        offsets.add(offset);
+        offset += width;
+        if (++i == 2) {
+          relBuilder.join(JoinRelType.INNER);
+          --i;
+        }
+      }
+      final BiMap<Integer, Integer> biMap = HashBiMap.create();
+      int k = 0;
+      offset = 0;
+      map.clear();
+      for (Map.Entry<String, VarData> entry : varOffsets.entrySet()) {
+        final String var = entry.getKey();
+        final VarData data = entry.getValue();
+        for (int j = 0; j < data.rowType.getFieldCount(); j++) {
+          biMap.put(k++, data.offset + j);
+        }
+        final int finalOffset = offset;
+        if (data.type instanceof RecordType) {
+          map.put(var, b ->
+              b.getRexBuilder().makeRangeReference(data.rowType, finalOffset,
+                  false));
+        } else {
+          map.put(var, b -> b.field(finalOffset));
+        }
+        offset += data.rowType.getFieldCount();
+      }
+      relBuilder.project(relBuilder.fields(list(biMap)));
     }
-    Context cx = new Context(env.bindAll(bindings), relBuilder, map);
+    Context cx = new Context(env.bindAll(bindings), relBuilder, map, 1);
     for (Ast.FromStep fromStep : from.steps) {
       switch (fromStep.op) {
       case WHERE:
@@ -174,6 +216,15 @@ public class CalciteCompiler extends Compiler {
       yield_(cx, from.yieldExp);
     }
     return relBuilder;
+  }
+
+  private ImmutableList<Integer> list(BiMap<Integer, Integer> biMap) {
+    // Assume that biMap has keys 0 .. size() - 1; each key occurs once.
+    final List<Integer> list =
+        new ArrayList<>(Collections.nCopies(biMap.size(), null));
+    biMap.forEach(list::set);
+    // Will throw if there are any nulls left.
+    return ImmutableList.copyOf(list);
   }
 
   private RelBuilder yield_(Context cx, Ast.Exp exp) {
@@ -261,8 +312,9 @@ public class CalciteCompiler extends Compiler {
       if (apply.fn instanceof Ast.RecordSelector
           && apply.arg instanceof Ast.Id) {
         // Something like '#deptno e',
-        return cx.relBuilder.field(((Ast.Id) apply.arg).name,
-            ((Ast.RecordSelector) apply.fn).name);
+        final RexNode range =
+            cx.map.get(((Ast.Id) apply.arg).name).apply(cx.relBuilder);
+        return cx.relBuilder.field(range, ((Ast.RecordSelector) apply.fn).name);
       }
       if (apply.fn instanceof Ast.Id) {
         final Ast.Tuple tuple = (Ast.Tuple) apply.arg;
@@ -310,7 +362,11 @@ public class CalciteCompiler extends Compiler {
   }
 
   private List<RexNode> translateList(Context cx, List<Ast.Exp> exps) {
-    return Util.transform(exps, a -> translate(cx, a));
+    final ImmutableList.Builder<RexNode> list = ImmutableList.builder();
+    for (Ast.Exp exp : exps) {
+      list.add(translate(cx, exp));
+    }
+    return list.build();
   }
 
   private Context where(Context cx, Ast.Where where) {
@@ -356,7 +412,8 @@ public class CalciteCompiler extends Compiler {
       map.put(aggregate.id.name, b -> b.field(1, 0, i));
     });
     cx.relBuilder.aggregate(groupKey, aggregateCalls);
-    return new Context(cx.env.bindAll(bindings), cx.relBuilder, map);
+    final int inputCount = 1;
+    return new Context(cx.env.bindAll(bindings), cx.relBuilder, map, inputCount);
   }
 
   private static EvalEnv evalEnvOf(Environment env) {
@@ -371,12 +428,27 @@ public class CalciteCompiler extends Compiler {
     final Environment env;
     final RelBuilder relBuilder;
     final Map<String, Function<RelBuilder, RexNode>> map;
+    final int inputCount;
 
     Context(Environment env, RelBuilder relBuilder,
-        Map<String, Function<RelBuilder, RexNode>> map) {
+        Map<String, Function<RelBuilder, RexNode>> map, int inputCount) {
       this.env = env;
       this.relBuilder = relBuilder;
       this.map = map;
+      this.inputCount = inputCount;
+    }
+  }
+
+  /** How a Morel variable maps onto the columns returned from a Join. */
+  private static class VarData {
+    final Type type;
+    final int offset;
+    final RelDataType rowType;
+
+    VarData(Type type, int offset, RelDataType rowType) {
+      this.type = type;
+      this.offset = offset;
+      this.rowType = rowType;
     }
   }
 }
