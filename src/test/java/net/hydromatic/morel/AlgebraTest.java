@@ -162,6 +162,10 @@ public class AlgebraTest {
             + "where e.deptno = d.deptno\n"
             + "andalso e.job = \"CLERK\"\n"
             + "group e.mgr",
+        "[1, 2, 3] union [2, 3, 4]",
+        "[10, 15, 20] union (from d in scott.dept yield d.deptno)",
+        "[10, 15, 20] except (from d in scott.dept yield d.deptno)",
+        "[10, 15, 20] intersect (from d in scott.dept yield d.deptno)",
     };
     Stream.of(queries).forEach(query -> {
       try {

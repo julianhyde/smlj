@@ -34,6 +34,7 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Lists;
 
 import net.hydromatic.morel.ast.Ast;
 import net.hydromatic.morel.ast.Op;
@@ -94,29 +95,54 @@ public class CalciteCompiler extends Compiler {
   public RelNode toRel(Environment env, Ast.Exp expression) {
     final FrameworkConfig config = Frameworks.newConfigBuilder().build();
     final RelBuilder relBuilder = RelBuilder.create(config);
+    final Context cx = new Context(env, relBuilder, ImmutableMap.of(), 0);
+    return toRel(cx, expression).build();
+  }
+
+  RelBuilder toRel(Context cx, Ast.Exp expression) {
     switch (expression.op) {
     case FROM:
-      return from(env, relBuilder, (Ast.From) expression).build();
+      return from(cx, (Ast.From) expression);
 
     case LIST:
       // For example, 'from n in [1, 2, 3]'
       final Ast.List list = (Ast.List) expression;
-      final Context cx = new Context(env, relBuilder, ImmutableMap.of(), 0);
       for (Ast.Exp arg : list.args) {
-        relBuilder.values(new String[] {"T"}, true);
+        cx.relBuilder.values(new String[] {"T"}, true);
         yield_(cx, arg);
       }
-      return relBuilder.union(true, list.args.size()).build();
+      return cx.relBuilder.union(true, list.args.size());
 
     case APPLY:
       final Ast.Apply apply = (Ast.Apply) expression;
       if (apply.fn instanceof Ast.RecordSelector
           && apply.arg instanceof Ast.Id) {
         // Something like '#emp scott', 'scott' is a foreign value
-        final Code code1 = compile(env, apply);
-        final Object o = code1.eval(evalEnvOf(env));
+        final Code code1 = compile(cx.env, apply);
+        final Object o = code1.eval(evalEnvOf(cx.env));
         if (o instanceof RelList) {
-          return ((RelList) o).rel;
+          return cx.relBuilder.push(((RelList) o).rel);
+        }
+      }
+      if (apply.fn instanceof Ast.Id) {
+        switch (((Ast.Id) apply.fn).name) {
+        case "op union":
+        case "op except":
+        case "op intersect":
+          // For example, '[1, 2, 3] union (from scott.dept yield deptno)'
+          final Ast.Tuple tuple = (Ast.Tuple) apply.arg;
+          tuple.forEachArg((arg, i) -> toRel(cx, arg));
+          harmonizeRowTypes(cx.relBuilder, tuple.args.size());
+          switch (((Ast.Id) apply.fn).name) {
+          case "op union":
+            return cx.relBuilder.union(true, tuple.args.size());
+          case "op except":
+            return cx.relBuilder.minus(false, tuple.args.size());
+          case "op intersect":
+            return cx.relBuilder.intersect(false, tuple.args.size());
+          default:
+            throw new AssertionError(apply.fn);
+          }
         }
       }
       // fall through
@@ -126,7 +152,22 @@ public class CalciteCompiler extends Compiler {
     }
   }
 
-  private RelBuilder from(Environment env, RelBuilder relBuilder, Ast.From from) {
+  private static void harmonizeRowTypes(RelBuilder relBuilder, int inputCount) {
+    final List<RelNode> inputs = new ArrayList<>();
+    for (int i = 0; i < inputCount; i++) {
+      inputs.add(relBuilder.build());
+    }
+    final RelDataType rowType = relBuilder.getTypeFactory()
+        .leastRestrictive(Util.transform(inputs, RelNode::getRowType));
+    for (RelNode input : Lists.reverse(inputs)) {
+      relBuilder.push(input)
+          .convert(rowType, false);
+    }
+  }
+
+  private RelBuilder from(Context cx, Ast.From from) {
+    final Environment env = cx.env;
+    final RelBuilder relBuilder = cx.relBuilder;
     final Map<Ast.Pat, RelNode> sourceCodes = new LinkedHashMap<>();
     final List<Binding> bindings = new ArrayList<>();
     for (Map.Entry<Ast.Pat, Ast.Exp> patExp : from.sources.entrySet()) {
@@ -147,9 +188,6 @@ public class CalciteCompiler extends Compiler {
       relBuilder.values(new String[] {"ZERO"}, 0);
     } else {
       final SortedMap<String, VarData> varOffsets = new TreeMap<>();
-      final int inputCount = sourceCodes.size();
-      final List<Integer> widths = new ArrayList<>();
-      final List<Integer> offsets = new ArrayList<>();
       int i = 0;
       int offset = 0;
       for (Map.Entry<Ast.Pat, RelNode> pair : sourceCodes.entrySet()) {
@@ -165,10 +203,7 @@ public class CalciteCompiler extends Compiler {
           varOffsets.put(((Ast.IdPat) pat).name,
               new VarData(typeMap.getType(pat), offset, r.getRowType()));
         }
-        final int width = r.getRowType().getFieldCount();
-        widths.add(width);
-        offsets.add(offset);
-        offset += width;
+        offset += r.getRowType().getFieldCount();
         if (++i == 2) {
           relBuilder.join(JoinRelType.INNER);
           --i;
@@ -196,7 +231,7 @@ public class CalciteCompiler extends Compiler {
       }
       relBuilder.project(relBuilder.fields(list(biMap)));
     }
-    Context cx = new Context(env.bindAll(bindings), relBuilder, map, 1);
+    cx = new Context(env.bindAll(bindings), relBuilder, map, 1);
     for (Ast.FromStep fromStep : from.steps) {
       switch (fromStep.op) {
       case WHERE:

@@ -29,6 +29,7 @@ import org.apache.calcite.rel.type.RelDataTypeField;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Ordering;
 
 import net.hydromatic.morel.ast.Ast;
 import net.hydromatic.morel.ast.AstNode;
@@ -62,6 +63,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -300,7 +302,16 @@ class Ml {
       final Ast.Exp e2 = Compiles.toExp(valDecl2);
       final Object value = eval(env, resolved, e2);
       final Object value2 = evalCalcite(calcite, env, resolved, e2);
-      assertThat(value2, is(value));
+      if (!Objects.equals(value, value2)
+          && value instanceof List
+          && value2 instanceof List
+          && !ml.contains("order")) {
+        final List list = Ordering.natural().immutableSortedCopy((List) value);
+        final List list2 = Ordering.natural().immutableSortedCopy((List) value2);
+        assertThat(list2, is(list));
+      } else {
+        assertThat(value2, is(value));
+      }
       return this;
     } catch (ParseException e) {
       throw new RuntimeException(e);
