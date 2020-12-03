@@ -168,12 +168,42 @@ public class AlgebraTest {
             + "where e.deptno = d.deptno\n"
             + "andalso e.job = \"CLERK\"\n"
             + "group e.mgr",
+        "from e in scott.emp,\n"
+            + "  g in scott.salgrade\n"
+            + "where e.sal >= g.losal\n"
+            + "  andalso e.sal < g.hisal",
+        "from e in scott.emp,\n"
+            + "  d in scott.dept,"
+            + "  g in scott.salgrade\n"
+            + "where e.sal >= g.losal\n"
+            + "  andalso e.sal < g.hisal\n"
+            + "  andalso d.deptno = e.deptno",
+        "from e in scott.emp,\n"
+            + "  d in scott.dept,"
+            + "  g in scott.salgrade\n"
+            + "where e.sal >= g.losal\n"
+            + "  andalso e.sal < g.hisal\n"
+            + "  andalso d.deptno = e.deptno\n"
+            + "group g.grade compute c = count",
         "[1, 2, 3] union [2, 3, 4]",
         "[10, 15, 20] union (from d in scott.dept yield d.deptno)",
         "[10, 15, 20] except (from d in scott.dept yield d.deptno)",
         "[10, 15, 20] intersect (from d in scott.dept yield d.deptno)",
+
+        // the following 3 are equivalent
+        "from e in scott.emp where e.deptno = 30 yield e.empno",
+        "#let\n"
+            + "  val emps = #emp scott\n"
+            + "  val thirty = 30\n"
+            + "in\n"
+            + "  from e in emps\n"
+            + "  where e.deptno = 30\n"
+            + "  yield e.empno\n"
+            + "end",
+        "#map (fn e => (#empno e))\n"
+            + "  (filter (fn e => (#deptno e) = 30) (#emp scott))",
     };
-    Stream.of(queries).forEach(query -> {
+    Stream.of(queries).filter(q -> !q.startsWith("#")).forEach(query -> {
       try {
         checkEqual(query);
       } catch (AssertionError | RuntimeException e) {

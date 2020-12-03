@@ -29,7 +29,6 @@ import net.hydromatic.morel.type.Binding;
 import net.hydromatic.morel.util.Ord;
 import net.hydromatic.morel.util.Pair;
 
-import java.math.BigDecimal;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
@@ -1336,11 +1335,9 @@ public class Ast {
           // The type of
           //   from emps as e group by a = e1, b = e2 compute c = sum of e3
           // is the same as the type of
-          //   {e1 as a, e2 as b, sum (map (fn e => c) list) as x}
+          //   {a = e1, b = e2, c = sum (map (fn e => e3) [])}
           final Set<Id> nextFields = new HashSet<>(Pair.left(groupExps));
           groupExps.forEach(pair -> nextFields.add(pair.left));
-          final Literal aggResult =
-              ast.intLiteral(pos, BigDecimal.ZERO); // FIXME
           aggregates.forEach(aggregate -> nextFields.add(aggregate.id));
           fields = nextFields;
         }
