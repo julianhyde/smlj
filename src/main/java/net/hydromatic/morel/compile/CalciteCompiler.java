@@ -23,6 +23,7 @@ import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.tools.FrameworkConfig;
@@ -35,6 +36,7 @@ import com.google.common.collect.HashBiMap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Ordering;
 
 import net.hydromatic.morel.ast.Ast;
 import net.hydromatic.morel.ast.Op;
@@ -60,6 +62,7 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import javax.annotation.Nonnull;
 
 import static net.hydromatic.morel.ast.AstBuilder.ast;
 
@@ -427,28 +430,64 @@ public class CalciteCompiler extends Compiler {
     final List<Binding> bindings = new ArrayList<>();
     final List<RexNode> nodes = new ArrayList<>();
     final AtomicInteger ai = new AtomicInteger();
+    final List<String> names = new ArrayList<>();
     Pair.forEach(group.groupExps, (id, exp) -> {
       bindings.add(Binding.of(id.name, typeMap.getType(id)));
       nodes.add(translate(cx, exp));
-      final int i = ai.getAndIncrement();
-      map.put(id.name, b -> b.field(1, 0, i));
+      names.add(id.name);
     });
     final RelBuilder.GroupKey groupKey = cx.relBuilder.groupKey(nodes);
     final List<RelBuilder.AggCall> aggregateCalls = new ArrayList<>();
     group.aggregates.forEach(aggregate -> {
       bindings.add(Binding.of(aggregate.id.name, typeMap.getType(aggregate)));
+      final SqlAggFunction op = aggOp(aggregate.aggregate);
+      final ImmutableList.Builder<RexNode> args = ImmutableList.builder();
+      if (aggregate.argument != null) {
+        args.add(translate(cx, aggregate.argument));
+      }
       aggregateCalls.add(
-          cx.relBuilder.aggregateCall(SqlStdOperatorTable.SUM, // TODO:
-              aggregate.argument == null
-              ? ImmutableList.of()
-              : ImmutableList.of(translate(cx, aggregate.argument)))
+          cx.relBuilder.aggregateCall(op, args.build())
               .as(aggregate.id.name));
-      final int i = ai.getAndIncrement();
-      map.put(aggregate.id.name, b -> b.field(1, 0, i));
+      names.add(aggregate.id.name);
     });
+
+    // Create an Aggregate operator.
     cx.relBuilder.aggregate(groupKey, aggregateCalls);
-    final int inputCount = 1;
-    return new Context(cx.env.bindAll(bindings), cx.relBuilder, map, inputCount);
+
+    // Permute the fields so that they are sorted by name, per Morel records.
+    final List<String> sortedNames =
+        Ordering.natural().immutableSortedCopy(names);
+    cx.relBuilder.project(cx.relBuilder.fields(sortedNames));
+    sortedNames.forEach(name -> {
+      final int i = map.size();
+      map.put(name, b -> b.field(1, 0, i));
+    });
+
+    // Return a context containing a variable for each output field.
+    return new Context(cx.env.bindAll(bindings), cx.relBuilder, map, 1);
+  }
+
+  /** Returns the Calcite operator corresponding to a Morel built-in aggregate
+   * function.
+   *
+   * <p>Future work: rather than resolving by name, look up aggregate function
+   * in environment, and compare with standard implementation of "sum" etc.;
+   * support aggregate functions defined by expressions (e.g. lambdas). */
+  @Nonnull private SqlAggFunction aggOp(Ast.Exp aggregate) {
+    if (aggregate instanceof Ast.Id) {
+      final String name = ((Ast.Id) aggregate).name;
+      switch (name) {
+      case "sum":
+        return SqlStdOperatorTable.SUM;
+      case "count":
+        return SqlStdOperatorTable.COUNT;
+      case "min":
+        return SqlStdOperatorTable.MIN;
+      case "max":
+        return SqlStdOperatorTable.MAX;
+      }
+    }
+    throw new AssertionError("unknown aggregate function: " + aggregate);
   }
 
   private static EvalEnv evalEnvOf(Environment env) {

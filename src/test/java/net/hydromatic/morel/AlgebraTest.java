@@ -136,11 +136,17 @@ public class AlgebraTest {
         "from r in [{a=2,b=3},{a=2,b=1},{a=1,b=1}]\n"
             + "  group r.a",
         "from r in [{a=2,b=3},{a=2,b=1},{a=1,b=1}]\n"
+            + "  group compute sb = sum of r.b",
+        "from r in [{a=2,b=3},{a=2,b=1},{a=1,b=1}]\n"
             + "  group r.a\n"
             + "  yield a",
         "from r in [{a=2,b=3}]\n"
-            + "group r.a compute sb = sum of r.b\n"
-            + "yield {a, a2 = a + a, sb}",
+            + "group r.b compute sb = sum of r.b,\n"
+            + "    mb = min of r.b, a = count",
+        "from r in [{a=2,b=3}]\n"
+            + "group r.b compute sb = sum of r.b,\n"
+            + "    mb = min of r.b, a = count\n"
+            + "yield {a, a2 = a + b, sb}",
         "from e in scott.emp,\n"
             + "  d in scott.dept\n"
             + "where e.deptno = d.deptno\n"
