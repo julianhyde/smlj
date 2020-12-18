@@ -35,12 +35,14 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Ordering;
 
 import net.hydromatic.morel.ast.Ast;
 import net.hydromatic.morel.ast.Op;
 import net.hydromatic.morel.eval.Code;
+import net.hydromatic.morel.eval.Codes;
 import net.hydromatic.morel.eval.EvalEnv;
 import net.hydromatic.morel.eval.EvalEnvs;
 import net.hydromatic.morel.eval.Unit;
@@ -58,6 +60,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -105,54 +108,101 @@ public class CalciteCompiler extends Compiler {
   RelBuilder toRel(Context cx, Ast.Exp expression) {
     switch (expression.op) {
     case FROM:
-      return from(cx, (Ast.From) expression);
+      return relFrom(cx, (Ast.From) expression);
+
+    case LET:
+      return relLet(cx, (Ast.LetExp) expression);
 
     case LIST:
       // For example, 'from n in [1, 2, 3]'
-      final Ast.List list = (Ast.List) expression;
-      for (Ast.Exp arg : list.args) {
-        cx.relBuilder.values(new String[] {"T"}, true);
-        yield_(cx, arg);
-      }
-      return cx.relBuilder.union(true, list.args.size());
+      return relList(cx, (Ast.List) expression);
 
     case APPLY:
-      final Ast.Apply apply = (Ast.Apply) expression;
-      if (apply.fn instanceof Ast.RecordSelector
-          && apply.arg instanceof Ast.Id) {
-        // Something like '#emp scott', 'scott' is a foreign value
-        final Code code1 = compile(cx.env, apply);
-        final Object o = code1.eval(evalEnvOf(cx.env));
-        if (o instanceof RelList) {
-          return cx.relBuilder.push(((RelList) o).rel);
-        }
-      }
-      if (apply.fn instanceof Ast.Id) {
-        switch (((Ast.Id) apply.fn).name) {
-        case "op union":
-        case "op except":
-        case "op intersect":
-          // For example, '[1, 2, 3] union (from scott.dept yield deptno)'
-          final Ast.Tuple tuple = (Ast.Tuple) apply.arg;
-          tuple.forEachArg((arg, i) -> toRel(cx, arg));
-          harmonizeRowTypes(cx.relBuilder, tuple.args.size());
-          switch (((Ast.Id) apply.fn).name) {
-          case "op union":
-            return cx.relBuilder.union(true, tuple.args.size());
-          case "op except":
-            return cx.relBuilder.minus(false, tuple.args.size());
-          case "op intersect":
-            return cx.relBuilder.intersect(false, tuple.args.size());
-          default:
-            throw new AssertionError(apply.fn);
-          }
-        }
-      }
-      // fall through
+      return relApply(cx, (Ast.Apply) expression)
+          .orElseThrow(() -> new AssertionError("unknown: " + expression));
 
     default:
       throw new AssertionError("unknown: " + expression);
     }
+  }
+
+  private RelBuilder relLet(Context cx, Ast.LetExp letExp) {
+    return relLet2(cx, letExp.decls, letExp.e);
+  }
+
+  private RelBuilder relLet2(Context cx, List<Ast.Decl> decls, Ast.Exp e) {
+    final Ast.LetExp letExp = flattenLet(decls, e);
+    return relLet3(cx, Iterables.getOnlyElement(letExp.decls), letExp.e);
+  }
+
+  private RelBuilder relLet3(Context cx, Ast.Decl decl, Ast.Exp e) {
+    final List<Code> varCodes = new ArrayList<>();
+    final List<Binding> bindings = new ArrayList<>();
+    compileDecl(cx.env, decl, varCodes, bindings, null);
+    Environment env2 = cx.env.bindAll(bindings);
+    final Code resultCode = compile(env2, e);
+    return Codes.let(varCodes, resultCode);
+  }
+
+  private void relDecl(Context cx, Ast.Decl decl, List<Code> varCodes,
+      List<Binding> bindings, List<Action> actions) {
+    switch (decl.op) {
+    case VAL_DECL:
+      compileValDecl(cx.env, (Ast.ValDecl) decl, varCodes, bindings, actions);
+      break;
+    case DATATYPE_DECL:
+      final Ast.DatatypeDecl datatypeDecl = (Ast.DatatypeDecl) decl;
+      compileDatatypeDecl(env, datatypeDecl, bindings, actions);
+      break;
+    case FUN_DECL:
+      throw new AssertionError("unknown " + decl.op + " [" + decl
+          + "] (did you remember to call TypeResolver.toValDecl?)");
+    default:
+      throw new AssertionError("unknown " + decl.op + " [" + decl + "]");
+    }
+  }
+
+
+  private Optional<RelBuilder> relApply(Context cx, Ast.Apply apply) {
+    if (apply.fn instanceof Ast.RecordSelector
+        && apply.arg instanceof Ast.Id) {
+      // Something like '#emp scott', 'scott' is a foreign value
+      final Code code1 = compile(cx.env, apply);
+      final Object o = code1.eval(evalEnvOf(cx.env));
+      if (o instanceof RelList) {
+        return Optional.of(cx.relBuilder.push(((RelList) o).rel));
+      }
+    }
+    if (apply.fn instanceof Ast.Id) {
+      switch (((Ast.Id) apply.fn).name) {
+      case "op union":
+      case "op except":
+      case "op intersect":
+        // For example, '[1, 2, 3] union (from scott.dept yield deptno)'
+        final Ast.Tuple tuple = (Ast.Tuple) apply.arg;
+        tuple.forEachArg((arg, i) -> toRel(cx, arg));
+        harmonizeRowTypes(cx.relBuilder, tuple.args.size());
+        switch (((Ast.Id) apply.fn).name) {
+        case "op union":
+          return Optional.of(cx.relBuilder.union(true, tuple.args.size()));
+        case "op except":
+          return Optional.of(cx.relBuilder.minus(false, tuple.args.size()));
+        case "op intersect":
+          return Optional.of(cx.relBuilder.intersect(false, tuple.args.size()));
+        default:
+          throw new AssertionError(apply.fn);
+        }
+      }
+    }
+    return Optional.empty();
+  }
+
+  private RelBuilder relList(Context cx, Ast.List list) {
+    for (Ast.Exp arg : list.args) {
+      cx.relBuilder.values(new String[] {"T"}, true);
+      yield_(cx, arg);
+    }
+    return cx.relBuilder.union(true, list.args.size());
   }
 
   private static void harmonizeRowTypes(RelBuilder relBuilder, int inputCount) {
@@ -168,7 +218,7 @@ public class CalciteCompiler extends Compiler {
     }
   }
 
-  private RelBuilder from(Context cx, Ast.From from) {
+  private RelBuilder relFrom(Context cx, Ast.From from) {
     final Environment env = cx.env;
     final RelBuilder relBuilder = cx.relBuilder;
     final Map<Ast.Pat, RelNode> sourceCodes = new LinkedHashMap<>();

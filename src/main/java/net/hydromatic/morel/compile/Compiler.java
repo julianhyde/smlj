@@ -90,7 +90,7 @@ public class Compiler {
    * <p>Usually involves placing a type or value into the bindings that will
    * make up the environment in which the next statement will be executed, and
    * printing some text on the screen. */
-  private interface Action {
+  interface Action {
     void apply(List<String> output, List<Binding> bindings, EvalEnv evalEnv);
   }
 
@@ -393,7 +393,7 @@ public class Compiler {
     return Codes.let(varCodes, resultCode);
   }
 
-  private Ast.LetExp flattenLet(List<Ast.Decl> decls, Ast.Exp e) {
+  protected Ast.LetExp flattenLet(List<Ast.Decl> decls, Ast.Exp e) {
     if (decls.size() == 1) {
       return ast.let(e.pos, decls, e);
     } else {
@@ -402,7 +402,7 @@ public class Compiler {
     }
   }
 
-  private void compileDecl(Environment env, Ast.Decl decl, List<Code> varCodes,
+  void compileDecl(Environment env, Ast.Decl decl, List<Code> varCodes,
       List<Binding> bindings, List<Action> actions) {
     switch (decl.op) {
     case VAL_DECL:
