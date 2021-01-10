@@ -42,7 +42,6 @@ import com.google.common.collect.Ordering;
 import net.hydromatic.morel.ast.Ast;
 import net.hydromatic.morel.ast.Op;
 import net.hydromatic.morel.eval.Code;
-import net.hydromatic.morel.eval.Codes;
 import net.hydromatic.morel.eval.EvalEnv;
 import net.hydromatic.morel.eval.EvalEnvs;
 import net.hydromatic.morel.eval.Unit;
@@ -141,27 +140,8 @@ public class CalciteCompiler extends Compiler {
     compileDecl(cx.env, decl, varCodes, bindings, null);
     Environment env2 = cx.env.bindAll(bindings);
     final Code resultCode = compile(env2, e);
-    return Codes.let(varCodes, resultCode);
+    throw new AssertionError("TODO");
   }
-
-  private void relDecl(Context cx, Ast.Decl decl, List<Code> varCodes,
-      List<Binding> bindings, List<Action> actions) {
-    switch (decl.op) {
-    case VAL_DECL:
-      compileValDecl(cx.env, (Ast.ValDecl) decl, varCodes, bindings, actions);
-      break;
-    case DATATYPE_DECL:
-      final Ast.DatatypeDecl datatypeDecl = (Ast.DatatypeDecl) decl;
-      compileDatatypeDecl(env, datatypeDecl, bindings, actions);
-      break;
-    case FUN_DECL:
-      throw new AssertionError("unknown " + decl.op + " [" + decl
-          + "] (did you remember to call TypeResolver.toValDecl?)");
-    default:
-      throw new AssertionError("unknown " + decl.op + " [" + decl + "]");
-    }
-  }
-
 
   private Optional<RelBuilder> relApply(Context cx, Ast.Apply apply) {
     if (apply.fn instanceof Ast.RecordSelector
