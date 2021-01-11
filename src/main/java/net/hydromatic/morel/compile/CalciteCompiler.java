@@ -59,10 +59,9 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.SortedMap;
 import java.util.TreeMap;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import javax.annotation.Nonnull;
 
@@ -100,89 +99,93 @@ public class CalciteCompiler extends Compiler {
   public RelNode toRel(Environment env, Ast.Exp expression) {
     final FrameworkConfig config = Frameworks.newConfigBuilder().build();
     final RelBuilder relBuilder = RelBuilder.create(config);
-    final Context cx = new Context(env, relBuilder, ImmutableMap.of(), 0);
-    return toRel(cx, expression).build();
+    final RelContext cx = new RelContext(env, relBuilder, ImmutableMap.of(), 0);
+    toRel(cx, expression);
+    return relBuilder.build();
   }
 
-  RelBuilder toRel(Context cx, Ast.Exp expression) {
-    switch (expression.op) {
-    case FROM:
-      return relFrom(cx, (Ast.From) expression);
-
-    case LET:
-      return relLet(cx, (Ast.LetExp) expression);
-
-    case LIST:
-      // For example, 'from n in [1, 2, 3]'
-      return relList(cx, (Ast.List) expression);
-
-    case APPLY:
-      return relApply(cx, (Ast.Apply) expression)
-          .orElseThrow(() -> new AssertionError("unknown: " + expression));
-
-    default:
-      throw new AssertionError("unknown: " + expression);
-    }
+  void toRel(RelContext cx, Ast.Exp expression) {
+    ((RelCode) compile(cx, expression)).toRel(cx);
   }
 
-  private RelBuilder relLet(Context cx, Ast.LetExp letExp) {
+  private RelBuilder relLet(RelContext cx, Ast.LetExp letExp) {
     return relLet2(cx, letExp.decls, letExp.e);
   }
 
-  private RelBuilder relLet2(Context cx, List<Ast.Decl> decls, Ast.Exp e) {
+  private RelBuilder relLet2(RelContext cx, List<Ast.Decl> decls, Ast.Exp e) {
     final Ast.LetExp letExp = flattenLet(decls, e);
     return relLet3(cx, Iterables.getOnlyElement(letExp.decls), letExp.e);
   }
 
-  private RelBuilder relLet3(Context cx, Ast.Decl decl, Ast.Exp e) {
+  private RelBuilder relLet3(RelContext cx, Ast.Decl decl, Ast.Exp e) {
     final List<Code> varCodes = new ArrayList<>();
     final List<Binding> bindings = new ArrayList<>();
-    compileDecl(cx.env, decl, varCodes, bindings, null);
-    Environment env2 = cx.env.bindAll(bindings);
+    compileDecl(cx, decl, varCodes, bindings, null);
+    Context env2 = cx.bindAll(bindings);
     final Code resultCode = compile(env2, e);
     throw new AssertionError("TODO");
   }
 
-  private Optional<RelBuilder> relApply(Context cx, Ast.Apply apply) {
-    if (apply.fn instanceof Ast.RecordSelector
-        && apply.arg instanceof Ast.Id) {
-      // Something like '#emp scott', 'scott' is a foreign value
-      final Code code1 = compile(cx.env, apply);
-      final Object o = code1.eval(evalEnvOf(cx.env));
-      if (o instanceof RelList) {
-        return Optional.of(cx.relBuilder.push(((RelList) o).rel));
+  @Override protected RelCode compileApply(Context cx, Ast.Apply apply) {
+    final Code code = super.compileApply(cx, apply);
+    return new RelCode() {
+      @Override public Object eval(EvalEnv env) {
+        return code.eval(env);
       }
-    }
-    if (apply.fn instanceof Ast.Id) {
-      switch (((Ast.Id) apply.fn).name) {
-      case "op union":
-      case "op except":
-      case "op intersect":
-        // For example, '[1, 2, 3] union (from scott.dept yield deptno)'
-        final Ast.Tuple tuple = (Ast.Tuple) apply.arg;
-        tuple.forEachArg((arg, i) -> toRel(cx, arg));
-        harmonizeRowTypes(cx.relBuilder, tuple.args.size());
-        switch (((Ast.Id) apply.fn).name) {
-        case "op union":
-          return Optional.of(cx.relBuilder.union(true, tuple.args.size()));
-        case "op except":
-          return Optional.of(cx.relBuilder.minus(false, tuple.args.size()));
-        case "op intersect":
-          return Optional.of(cx.relBuilder.intersect(false, tuple.args.size()));
-        default:
-          throw new AssertionError(apply.fn);
+
+      @Override public void toRel(RelContext cx2) {
+        if (apply.fn instanceof Ast.RecordSelector
+            && apply.arg instanceof Ast.Id) {
+          // Something like '#emp scott', 'scott' is a foreign value
+          final Object o = code.eval(evalEnvOf(cx2.env));
+          if (o instanceof RelList) {
+            cx2.relBuilder.push(((RelList) o).rel);
+            return;
+          }
+        }
+        if (apply.fn instanceof Ast.Id) {
+          switch (((Ast.Id) apply.fn).name) {
+          case "op union":
+          case "op except":
+          case "op intersect":
+            // For example, '[1, 2, 3] union (from scott.dept yield deptno)'
+            final Ast.Tuple tuple = (Ast.Tuple) apply.arg;
+            tuple.forEachArg((arg, i) -> CalciteCompiler.this.toRel(cx2, arg));
+            harmonizeRowTypes(cx2.relBuilder, tuple.args.size());
+            switch (((Ast.Id) apply.fn).name) {
+            case "op union":
+              cx2.relBuilder.union(true, tuple.args.size());
+              return;
+            case "op except":
+              cx2.relBuilder.minus(false, tuple.args.size());
+              return;
+            case "op intersect":
+              cx2.relBuilder.intersect(false, tuple.args.size());
+              return;
+            default:
+              throw new AssertionError(apply.fn);
+            }
+          }
         }
       }
-    }
-    return Optional.empty();
+    };
   }
 
-  private RelBuilder relList(Context cx, Ast.List list) {
-    for (Ast.Exp arg : list.args) {
-      cx.relBuilder.values(new String[] {"T"}, true);
-      yield_(cx, arg);
-    }
-    return cx.relBuilder.union(true, list.args.size());
+  @Override protected Code compileList(Context cx, Ast.List list) {
+    final Code code = super.compileList(cx, list);
+    return new RelCode() {
+      @Override public Object eval(EvalEnv env) {
+        return code.eval(env);
+      }
+
+      @Override public void toRel(RelContext cx) {
+        for (Ast.Exp arg : list.args) {
+          cx.relBuilder.values(new String[] {"T"}, true);
+          yield_(cx, arg);
+        }
+        cx.relBuilder.union(true, list.args.size());
+      }
+    };
   }
 
   private static void harmonizeRowTypes(RelBuilder relBuilder, int inputCount) {
@@ -198,92 +201,101 @@ public class CalciteCompiler extends Compiler {
     }
   }
 
-  private RelBuilder relFrom(Context cx, Ast.From from) {
-    final Environment env = cx.env;
-    final RelBuilder relBuilder = cx.relBuilder;
-    final Map<Ast.Pat, RelNode> sourceCodes = new LinkedHashMap<>();
-    final List<Binding> bindings = new ArrayList<>();
-    for (Map.Entry<Ast.Pat, Ast.Exp> patExp : from.sources.entrySet()) {
-      final RelNode expCode = toRel(env.bindAll(bindings), patExp.getValue());
-      final Ast.Pat pat0 = patExp.getKey();
-      final ListType listType = (ListType) typeMap.getType(patExp.getValue());
-      final Ast.Pat pat = expandRecordPattern(pat0, listType.elementType);
-      sourceCodes.put(pat, expCode);
-      pat.visit(p -> {
-        if (p instanceof Ast.IdPat) {
-          final Ast.IdPat idPat = (Ast.IdPat) p;
-          bindings.add(Binding.of(idPat.name, typeMap.getType(p)));
-        }
-      });
-    }
-    final Map<String, Function<RelBuilder, RexNode>> map = new HashMap<>();
-    if (sourceCodes.size() == 0) {
-      relBuilder.values(new String[] {"ZERO"}, 0);
-    } else {
-      final SortedMap<String, VarData> varOffsets = new TreeMap<>();
-      int i = 0;
-      int offset = 0;
-      for (Map.Entry<Ast.Pat, RelNode> pair : sourceCodes.entrySet()) {
-        final Ast.Pat pat = pair.getKey();
-        final RelNode r = pair.getValue();
-        relBuilder.push(r);
-        if (pat instanceof Ast.IdPat) {
-          relBuilder.as(((Ast.IdPat) pat).name);
-          final int finalOffset = offset;
-          map.put(((Ast.IdPat) pat).name, b ->
-              b.getRexBuilder().makeRangeReference(r.getRowType(), finalOffset,
-                  false));
-          varOffsets.put(((Ast.IdPat) pat).name,
-              new VarData(typeMap.getType(pat), offset, r.getRowType()));
-        }
-        offset += r.getRowType().getFieldCount();
-        if (++i == 2) {
-          relBuilder.join(JoinRelType.INNER);
-          --i;
-        }
+  @Override protected RelCode compileFrom(Context cx, Ast.From from) {
+    final Code code = super.compileFrom(cx, from);
+    return new RelCode() {
+      @Override public Object eval(EvalEnv env) {
+        return code.eval(env);
       }
-      final BiMap<Integer, Integer> biMap = HashBiMap.create();
-      int k = 0;
-      offset = 0;
-      map.clear();
-      for (Map.Entry<String, VarData> entry : varOffsets.entrySet()) {
-        final String var = entry.getKey();
-        final VarData data = entry.getValue();
-        for (int j = 0; j < data.rowType.getFieldCount(); j++) {
-          biMap.put(k++, data.offset + j);
+
+      @Override public void toRel(RelContext cx) {
+        final Environment env = cx.env;
+        final RelBuilder relBuilder = cx.relBuilder;
+        final Map<Ast.Pat, RelNode> sourceCodes = new LinkedHashMap<>();
+        final List<Binding> bindings = new ArrayList<>();
+        for (Map.Entry<Ast.Pat, Ast.Exp> patExp : from.sources.entrySet()) {
+          final RelNode expCode =
+              CalciteCompiler.this.toRel(env.bindAll(bindings), patExp.getValue());
+          final Ast.Pat pat0 = patExp.getKey();
+          final ListType listType = (ListType) typeMap.getType(patExp.getValue());
+          final Ast.Pat pat = expandRecordPattern(pat0, listType.elementType);
+          sourceCodes.put(pat, expCode);
+          pat.visit(p -> {
+            if (p instanceof Ast.IdPat) {
+              final Ast.IdPat idPat = (Ast.IdPat) p;
+              bindings.add(Binding.of(idPat.name, typeMap.getType(p)));
+            }
+          });
         }
-        final int finalOffset = offset;
-        if (data.type instanceof RecordType) {
-          map.put(var, b ->
-              b.getRexBuilder().makeRangeReference(data.rowType, finalOffset,
-                  false));
+        final Map<String, Function<RelBuilder, RexNode>> map = new HashMap<>();
+        if (sourceCodes.size() == 0) {
+          relBuilder.values(new String[] {"ZERO"}, 0);
         } else {
-          map.put(var, b -> b.field(finalOffset));
+          final SortedMap<String, VarData> varOffsets = new TreeMap<>();
+          int i = 0;
+          int offset = 0;
+          for (Map.Entry<Ast.Pat, RelNode> pair : sourceCodes.entrySet()) {
+            final Ast.Pat pat = pair.getKey();
+            final RelNode r = pair.getValue();
+            relBuilder.push(r);
+            if (pat instanceof Ast.IdPat) {
+              relBuilder.as(((Ast.IdPat) pat).name);
+              final int finalOffset = offset;
+              map.put(((Ast.IdPat) pat).name, b ->
+                  b.getRexBuilder().makeRangeReference(r.getRowType(),
+                      finalOffset, false));
+              varOffsets.put(((Ast.IdPat) pat).name,
+                  new VarData(typeMap.getType(pat), offset, r.getRowType()));
+            }
+            offset += r.getRowType().getFieldCount();
+            if (++i == 2) {
+              relBuilder.join(JoinRelType.INNER);
+              --i;
+            }
+          }
+          final BiMap<Integer, Integer> biMap = HashBiMap.create();
+          int k = 0;
+          offset = 0;
+          map.clear();
+          for (Map.Entry<String, VarData> entry : varOffsets.entrySet()) {
+            final String var = entry.getKey();
+            final VarData data = entry.getValue();
+            for (int j = 0; j < data.rowType.getFieldCount(); j++) {
+              biMap.put(k++, data.offset + j);
+            }
+            final int finalOffset = offset;
+            if (data.type instanceof RecordType) {
+              map.put(var, b ->
+                  b.getRexBuilder().makeRangeReference(data.rowType,
+                      finalOffset, false));
+            } else {
+              map.put(var, b -> b.field(finalOffset));
+            }
+            offset += data.rowType.getFieldCount();
+          }
+          relBuilder.project(relBuilder.fields(list(biMap)));
         }
-        offset += data.rowType.getFieldCount();
+        cx = new RelContext(env.bindAll(bindings), relBuilder, map, 1);
+        for (Ast.FromStep fromStep : from.steps) {
+          switch (fromStep.op) {
+          case WHERE:
+            cx = where(cx, (Ast.Where) fromStep);
+            break;
+          case ORDER:
+            cx = order(cx, (Ast.Order) fromStep);
+            break;
+          case GROUP:
+            cx = group(cx, (Ast.Group) fromStep);
+            break;
+          default:
+            throw new AssertionError(fromStep);
+          }
+        }
+        if (from.yieldExp != null) {
+          yield_(cx, from.yieldExp);
+        }
       }
-      relBuilder.project(relBuilder.fields(list(biMap)));
-    }
-    cx = new Context(env.bindAll(bindings), relBuilder, map, 1);
-    for (Ast.FromStep fromStep : from.steps) {
-      switch (fromStep.op) {
-      case WHERE:
-        cx = where(cx, (Ast.Where) fromStep);
-        break;
-      case ORDER:
-        cx = order(cx, (Ast.Order) fromStep);
-        break;
-      case GROUP:
-        cx = group(cx, (Ast.Group) fromStep);
-        break;
-      default:
-        throw new AssertionError(fromStep);
-      }
-    }
-    if (from.yieldExp != null) {
-      yield_(cx, from.yieldExp);
-    }
-    return relBuilder;
+    };
   }
 
   private ImmutableList<Integer> list(BiMap<Integer, Integer> biMap) {
@@ -295,7 +307,7 @@ public class CalciteCompiler extends Compiler {
     return ImmutableList.copyOf(list);
   }
 
-  private RelBuilder yield_(Context cx, Ast.Exp exp) {
+  private RelBuilder yield_(RelContext cx, Ast.Exp exp) {
     final Ast.Record record;
     switch (exp.op) {
     case ID:
@@ -316,7 +328,7 @@ public class CalciteCompiler extends Compiler {
     return cx.relBuilder.project(rex);
   }
 
-  private RexNode translate(Context cx, Ast.Exp exp) {
+  private RexNode translate(RelContext cx, Ast.Exp exp) {
     final Ast.Record record;
     switch (exp.op) {
     case BOOL_LITERAL:
@@ -417,7 +429,7 @@ public class CalciteCompiler extends Compiler {
     throw new AssertionError("cannot translate " + exp.op + " [" + exp + "]");
   }
 
-  private Ast.Record toRecord(Context cx, Ast.Id id) {
+  private Ast.Record toRecord(RelContext cx, Ast.Id id) {
     final Type type = cx.env.get(id.name).type;
     if (type instanceof RecordType) {
       final SortedMap<String, Ast.Exp> map = new TreeMap<>();
@@ -429,7 +441,7 @@ public class CalciteCompiler extends Compiler {
     return null;
   }
 
-  private List<RexNode> translateList(Context cx, List<Ast.Exp> exps) {
+  private List<RexNode> translateList(RelContext cx, List<Ast.Exp> exps) {
     final ImmutableList.Builder<RexNode> list = ImmutableList.builder();
     for (Ast.Exp exp : exps) {
       list.add(translate(cx, exp));
@@ -437,12 +449,12 @@ public class CalciteCompiler extends Compiler {
     return list.build();
   }
 
-  private Context where(Context cx, Ast.Where where) {
+  private RelContext where(RelContext cx, Ast.Where where) {
     cx.relBuilder.filter(translate(cx, where.exp));
     return cx;
   }
 
-  private Context order(Context cx, Ast.Order order) {
+  private RelContext order(RelContext cx, Ast.Order order) {
     final List<RexNode> exps = new ArrayList<>();
     order.orderItems.forEach(i -> {
       RexNode exp = translate(cx, i.exp);
@@ -455,11 +467,10 @@ public class CalciteCompiler extends Compiler {
     return cx;
   }
 
-  private Context group(Context cx, Ast.Group group) {
+  private RelContext group(RelContext cx, Ast.Group group) {
     final Map<String, Function<RelBuilder, RexNode>> map = new HashMap<>();
     final List<Binding> bindings = new ArrayList<>();
     final List<RexNode> nodes = new ArrayList<>();
-    final AtomicInteger ai = new AtomicInteger();
     final List<String> names = new ArrayList<>();
     Pair.forEach(group.groupExps, (id, exp) -> {
       bindings.add(Binding.of(id.name, typeMap.getType(id)));
@@ -494,7 +505,7 @@ public class CalciteCompiler extends Compiler {
     });
 
     // Return a context containing a variable for each output field.
-    return new Context(cx.env.bindAll(bindings), cx.relBuilder, map, 1);
+    return new RelContext(cx.env.bindAll(bindings), cx.relBuilder, map, 1);
   }
 
   /** Returns the Calcite operator corresponding to a Morel built-in aggregate
@@ -528,18 +539,35 @@ public class CalciteCompiler extends Compiler {
   }
 
   /** Translation context. */
-  static class Context {
-    final Environment env;
+  static class RelContext extends Context {
     final RelBuilder relBuilder;
     final Map<String, Function<RelBuilder, RexNode>> map;
     final int inputCount;
 
-    Context(Environment env, RelBuilder relBuilder,
+    RelContext(Environment env, RelBuilder relBuilder,
         Map<String, Function<RelBuilder, RexNode>> map, int inputCount) {
-      this.env = env;
+      super(env);
       this.relBuilder = relBuilder;
       this.map = map;
       this.inputCount = inputCount;
+    }
+  }
+
+  /** Extension to {@link Code} that can also provide a translation to
+   * relational algebra. */
+  interface RelCode extends Code {
+    void toRel(RelContext cx);
+
+    static RelCode of(Code code, Consumer<RelContext> c) {
+      return new RelCode() {
+        @Override public Object eval(EvalEnv env) {
+          return code.eval(env);
+        }
+
+        @Override public void toRel(RelContext cx) {
+          c.accept(cx);
+        }
+      };
     }
   }
 
