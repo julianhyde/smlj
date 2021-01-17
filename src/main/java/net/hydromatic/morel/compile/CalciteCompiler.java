@@ -35,7 +35,6 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Ordering;
 
@@ -108,22 +107,22 @@ public class CalciteCompiler extends Compiler {
     ((RelCode) compile(cx, expression)).toRel(cx);
   }
 
-  private RelBuilder relLet(RelContext cx, Ast.LetExp letExp) {
-    return relLet2(cx, letExp.decls, letExp.e);
-  }
+  @Override protected Code compileLet(Context cx, Ast.Decl decl, Ast.Exp e) {
+    Code code = super.compileLet(cx, decl, e);
+    return new RelCode() {
+      @Override public Object eval(EvalEnv env) {
+        return code.eval(env);
+      }
 
-  private RelBuilder relLet2(RelContext cx, List<Ast.Decl> decls, Ast.Exp e) {
-    final Ast.LetExp letExp = flattenLet(decls, e);
-    return relLet3(cx, Iterables.getOnlyElement(letExp.decls), letExp.e);
-  }
-
-  private RelBuilder relLet3(RelContext cx, Ast.Decl decl, Ast.Exp e) {
-    final List<Code> varCodes = new ArrayList<>();
-    final List<Binding> bindings = new ArrayList<>();
-    compileDecl(cx, decl, varCodes, bindings, null);
-    Context env2 = cx.bindAll(bindings);
-    final Code resultCode = compile(env2, e);
-    throw new AssertionError("TODO");
+      @Override public void toRel(RelContext cx) {
+        final List<Code> varCodes = new ArrayList<>();
+        final List<Binding> bindings = new ArrayList<>();
+        compileDecl(cx, decl, varCodes, bindings, null);
+        Context cx2 = cx.bindAll(bindings);
+        final Code resultCode = compile(cx2, e);
+        throw new AssertionError("TODO");
+      }
+    };
   }
 
   @Override protected RelCode compileApply(Context cx, Ast.Apply apply) {
@@ -133,13 +132,13 @@ public class CalciteCompiler extends Compiler {
         return code.eval(env);
       }
 
-      @Override public void toRel(RelContext cx2) {
+      @Override public void toRel(RelContext cx) {
         if (apply.fn instanceof Ast.RecordSelector
             && apply.arg instanceof Ast.Id) {
           // Something like '#emp scott', 'scott' is a foreign value
-          final Object o = code.eval(evalEnvOf(cx2.env));
+          final Object o = code.eval(evalEnvOf(cx.env));
           if (o instanceof RelList) {
-            cx2.relBuilder.push(((RelList) o).rel);
+            cx.relBuilder.push(((RelList) o).rel);
             return;
           }
         }
@@ -150,17 +149,17 @@ public class CalciteCompiler extends Compiler {
           case "op intersect":
             // For example, '[1, 2, 3] union (from scott.dept yield deptno)'
             final Ast.Tuple tuple = (Ast.Tuple) apply.arg;
-            tuple.forEachArg((arg, i) -> CalciteCompiler.this.toRel(cx2, arg));
-            harmonizeRowTypes(cx2.relBuilder, tuple.args.size());
+            tuple.forEachArg((arg, i) -> CalciteCompiler.this.toRel(cx, arg));
+            harmonizeRowTypes(cx.relBuilder, tuple.args.size());
             switch (((Ast.Id) apply.fn).name) {
             case "op union":
-              cx2.relBuilder.union(true, tuple.args.size());
+              cx.relBuilder.union(true, tuple.args.size());
               return;
             case "op except":
-              cx2.relBuilder.minus(false, tuple.args.size());
+              cx.relBuilder.minus(false, tuple.args.size());
               return;
             case "op intersect":
-              cx2.relBuilder.intersect(false, tuple.args.size());
+              cx.relBuilder.intersect(false, tuple.args.size());
               return;
             default:
               throw new AssertionError(apply.fn);

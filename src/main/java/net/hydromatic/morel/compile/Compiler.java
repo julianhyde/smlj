@@ -159,8 +159,7 @@ public class Compiler {
       return Codes.ifThenElse(conditionCode, trueCode, falseCode);
 
     case LET:
-      final Ast.LetExp let = (Ast.LetExp) expression;
-      return compileLet(cx, let.decls, let.e);
+      return compileLet(cx, (Ast.LetExp) expression);
 
     case FN:
       final Ast.Fn fn = (Ast.Fn) expression;
@@ -415,12 +414,16 @@ public class Compiler {
     throw new UnsupportedOperationException(); // TODO
   }
 
+  private Code compileLet(Context cx, Ast.LetExp let) {
+    return compileLet(cx, let.decls, let.e);
+  }
+
   private Code compileLet(Context cx, List<Ast.Decl> decls, Ast.Exp e) {
     final Ast.LetExp letExp = flattenLet(decls, e);
     return compileLet(cx, Iterables.getOnlyElement(letExp.decls), letExp.e);
   }
 
-  private Code compileLet(Context cx, Ast.Decl decl, Ast.Exp e) {
+  protected Code compileLet(Context cx, Ast.Decl decl, Ast.Exp e) {
     final List<Code> varCodes = new ArrayList<>();
     final List<Binding> bindings = new ArrayList<>();
     compileDecl(cx, decl, varCodes, bindings, null);

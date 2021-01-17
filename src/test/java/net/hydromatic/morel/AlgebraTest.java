@@ -190,14 +190,21 @@ public class AlgebraTest {
         "[10, 15, 20] except (from d in scott.dept yield d.deptno)",
         "[10, 15, 20] intersect (from d in scott.dept yield d.deptno)",
 
-        // the following 3 are equivalent
+        // the following 4 are equivalent
         "from e in scott.emp where e.deptno = 30 yield e.empno",
+        "#let\n"
+            + "  val emps = #emp scott\n"
+            + "in\n"
+            + "  from e in emps\n"
+            + "  where e.deptno = 30\n"
+            + "  yield e.empno\n"
+            + "end",
         "#let\n"
             + "  val emps = #emp scott\n"
             + "  val thirty = 30\n"
             + "in\n"
             + "  from e in emps\n"
-            + "  where e.deptno = 30\n"
+            + "  where e.deptno = thirty\n"
             + "  yield e.empno\n"
             + "end",
         "#map (fn e => (#empno e))\n"
