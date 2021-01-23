@@ -219,6 +219,17 @@ public class AlgebraTest {
     });
   }
 
+  /** Translates a hybrid expression. The leaf cannot be translated to Calcite
+   * and therefore becomes a Morel table function; the root can. */
+  @Test public void testNative() {
+    String query = ""
+        + "from r in\n"
+        + "  List.tabulate (6, fn i =>\n"
+        + "    {i, j = i + 3, s = String.substring (\"morel\", 0, i)})\n"
+        + "yield {r.j, r.s}";
+    checkEqual(query);
+  }
+
   void checkEqual(String ml) {
     ml(ml).withBinding("scott", BuiltInDataSet.SCOTT).assertEvalSame();
   }

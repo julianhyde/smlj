@@ -280,6 +280,30 @@ class Ml {
     return this;
   }
 
+  private static final Ordering<Object> ORDERING =
+      Ordering.from(Ml::compareObjects);
+
+  private static int compareObjects(Object o1, Object o2) {
+    if (o1 instanceof List && o2 instanceof List) {
+      return compareLists((List) o1, (List) o2);
+    } else {
+      return ((Comparable) o1).compareTo(o2);
+    }
+  }
+
+  private static int compareLists(List o1, List o2) {
+    for (int i = 0; i < o1.size(); i++) {
+      if (i >= o2.size()) {
+        return -1;
+      }
+      int c = compareObjects(o1.get(i), o2.get(i));
+      if (c != 0) {
+        return c;
+      }
+    }
+    return 1;
+  }
+
   Ml assertEvalSame() {
     try {
       final Ast.Exp e = new MorelParserImpl(new StringReader(ml)).expression();
@@ -298,8 +322,8 @@ class Ml {
           && value instanceof List
           && value2 instanceof List
           && !ml.contains("order")) {
-        final List list = Ordering.natural().immutableSortedCopy((List) value);
-        final List list2 = Ordering.natural().immutableSortedCopy((List) value2);
+        final List list = ORDERING.immutableSortedCopy((List) value);
+        final List list2 = ORDERING.immutableSortedCopy((List) value2);
         assertThat(list2, is(list));
       } else {
         assertThat(value2, is(value));

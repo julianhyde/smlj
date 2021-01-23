@@ -20,6 +20,7 @@ package net.hydromatic.morel.compile;
 
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.JoinRelType;
+import org.apache.calcite.rel.externalize.RelJson;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexNode;
@@ -29,6 +30,7 @@ import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
+import org.apache.calcite.util.JsonBuilder;
 import org.apache.calcite.util.Util;
 
 import com.google.common.collect.BiMap;
@@ -45,6 +47,8 @@ import net.hydromatic.morel.eval.Describer;
 import net.hydromatic.morel.eval.EvalEnv;
 import net.hydromatic.morel.eval.EvalEnvs;
 import net.hydromatic.morel.eval.Unit;
+import net.hydromatic.morel.foreign.CalciteMorelTableFunction;
+import net.hydromatic.morel.foreign.Converters;
 import net.hydromatic.morel.foreign.RelList;
 import net.hydromatic.morel.type.Binding;
 import net.hydromatic.morel.type.ListType;
@@ -175,6 +179,19 @@ public class CalciteCompiler extends Compiler {
             }
           }
         }
+        final Type type = typeMap.getType(apply);
+        final RelDataTypeFactory typeFactory = cx.relBuilder.getTypeFactory();
+        final RelDataType calciteType =
+            Converters.toCalciteType(type, typeFactory);
+        final RelDataType rowType = calciteType.getComponentType();
+        final JsonBuilder jsonBuilder = new JsonBuilder();
+        final String jsonRowType =
+            jsonBuilder.toJsonString(
+                new RelJson(jsonBuilder).toJson(rowType));
+        final String morelCode = apply.toString();
+        cx.relBuilder.functionScan(CalciteMorelTableFunction.OPERATOR, 0,
+            cx.relBuilder.literal(morelCode),
+            cx.relBuilder.literal(jsonRowType));
       }
     };
   }

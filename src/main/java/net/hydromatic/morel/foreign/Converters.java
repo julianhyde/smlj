@@ -20,9 +20,13 @@ package net.hydromatic.morel.foreign;
 
 import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.linq4j.Enumerable;
+import org.apache.calcite.linq4j.EnumerableDefaults;
+import org.apache.calcite.linq4j.Linq4j;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
+import org.apache.calcite.sql.type.SqlTypeName;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
@@ -125,6 +129,20 @@ public class Converters {
     return FieldConverter.toType(field.getType()).mlType;
   }
 
+  public static RelDataType toCalciteType(Type type,
+      RelDataTypeFactory typeFactory) {
+    return C2m.forMorel(type, typeFactory).calciteType;
+  }
+
+  /** Returns a function that converts from Morel objects to an Enumerable
+   * over Calcite rows. */
+  public static Function<Object, Enumerable<Object[]>> toCalciteEnumerable(
+      Type type, RelDataTypeFactory typeFactory) {
+    final C2m converter =
+        C2m.forMorel(type, typeFactory);
+    return converter::toEnumerable;
+  }
+
   /** Converts a field from Calcite to Morel format. */
   enum FieldConverter {
     FROM_BOOLEAN(PrimitiveType.BOOL) {
@@ -205,6 +223,86 @@ public class Converters {
       default:
         return FROM_STRING;
       }
+    }
+  }
+
+  /** Converter from Calcite types to Morel types. */
+  private static class C2m {
+    final RelDataType calciteType;
+    final Type morelType;
+
+    C2m(RelDataType calciteType, Type morelType) {
+      this.calciteType = calciteType;
+      this.morelType = morelType;
+    }
+
+    /** Creates a converter for a given Morel type, in the process deducing the
+     * corresponding Calcite type. */
+    static C2m forMorel(Type type,
+        RelDataTypeFactory typeFactory) {
+      switch (type.op()) {
+      case LIST:
+        final ListType listType = (ListType) type;
+        return new C2m(
+            typeFactory.createMultisetType(
+                forMorel(listType.elementType, typeFactory).calciteType, -1),
+            type);
+
+      case RECORD_TYPE:
+        final RelDataTypeFactory.Builder typeBuilder = typeFactory.builder();
+        final RecordType recordType = (RecordType) type;
+        recordType.argNameTypes.forEach((name, argType) ->
+            typeBuilder.add(name, forMorel(argType, typeFactory).calciteType));
+        return new C2m(typeBuilder.build(), type);
+
+      case ID:
+        final PrimitiveType primitiveType = (PrimitiveType) type;
+        switch (primitiveType) {
+        case BOOL:
+          return new C2m(
+              typeFactory.createSqlType(SqlTypeName.BOOLEAN), type);
+        case INT:
+          return new C2m(
+              typeFactory.createSqlType(SqlTypeName.INTEGER), type);
+        case REAL:
+          return new C2m(
+              typeFactory.createSqlType(SqlTypeName.REAL), type);
+        case CHAR:
+          return new C2m(
+              typeFactory.createSqlType(SqlTypeName.SMALLINT), type);
+        case UNIT:
+          return new C2m(
+              typeFactory.createSqlType(SqlTypeName.TINYINT), type);
+        case STRING:
+          return new C2m(
+              typeFactory.createSqlType(SqlTypeName.VARCHAR, -1), type);
+        default:
+          throw new AssertionError("unknown type " + type);
+        }
+      }
+      throw new UnsupportedOperationException("cannot convert type " + type);
+    }
+
+    public Enumerable<Object[]> toEnumerable(Object v) {
+      @SuppressWarnings("unchecked")
+      final Enumerable<Object> enumerable =
+          Linq4j.asEnumerable((List<Object>) v);
+      switch (morelType.op()) {
+      case LIST:
+        final ListType listType = (ListType) morelType;
+        final C2m c =
+            new C2m(calciteType.getComponentType(),
+                listType.elementType);
+        return EnumerableDefaults.select(enumerable, c::toArray);
+      default:
+        throw new AssertionError("cannot convert " + morelType);
+      }
+    }
+
+    private Object[] toArray(Object o) {
+      @SuppressWarnings("unchecked")
+      List<Object> list = (List<Object>) o;
+      return list.toArray();
     }
   }
 }
