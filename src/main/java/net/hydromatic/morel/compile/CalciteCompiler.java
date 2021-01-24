@@ -23,9 +23,25 @@ import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.schema.TableFunction;
 import org.apache.calcite.sql.SqlAggFunction;
+import org.apache.calcite.sql.SqlFunction;
+import org.apache.calcite.sql.SqlFunctionCategory;
+import org.apache.calcite.sql.SqlIdentifier;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlOperator;
+import org.apache.calcite.sql.SqlTableFunction;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
+import org.apache.calcite.sql.parser.SqlParserPos;
+import org.apache.calcite.sql.type.InferTypes;
+import org.apache.calcite.sql.type.OperandTypes;
+import org.apache.calcite.sql.type.ReturnTypes;
+import org.apache.calcite.sql.type.SqlOperandMetadata;
+import org.apache.calcite.sql.type.SqlOperandTypeChecker;
+import org.apache.calcite.sql.type.SqlOperandTypeInference;
+import org.apache.calcite.sql.type.SqlReturnTypeInference;
+import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.validate.SqlUserDefinedTableFunction;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
@@ -166,6 +182,25 @@ public class CalciteCompiler extends Compiler {
             }
           }
         }
+        final TableFunction tableFunction = null;
+        final Function<RelDataTypeFactory, List<RelDataType>>
+            typeInference = typeFactory -> ImmutableList.of();
+        final SqlIdentifier name =
+            new SqlIdentifier("morel", SqlParserPos.ZERO);
+        final SqlOperator op =
+            new SqlUserDefinedTableFunction(name, SqlKind.OTHER_FUNCTION,
+                b -> {
+                  final RelDataTypeFactory typeFactory = b.getTypeFactory();
+                  return typeFactory.builder()
+                          .add("x", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                      .build();
+                },
+                (callBinding, returnType, operandTypes) -> 
+                    typeInference.apply(callBinding.getTypeFactory()),
+                OperandTypes.operandMetadata(ImmutableList.of(), typeInference,
+                    o -> "op#" + o, o -> false),
+                tableFunction);
+        cx.relBuilder.functionScan(op, 0);
       }
     };
   }
@@ -580,6 +615,26 @@ public class CalciteCompiler extends Compiler {
       this.type = type;
       this.offset = offset;
       this.rowType = rowType;
+    }
+  }
+
+  private static class SqlMorelTableFunction extends SqlFunction
+      implements SqlTableFunction {
+    public SqlMorelTableFunction(String name, SqlKind kind,
+        SqlReturnTypeInference returnTypeInference,
+        SqlOperandTypeInference operandTypeInference,
+        SqlOperandTypeChecker operandTypeChecker,
+        SqlFunctionCategory category) {
+      super("",
+          kind,
+          returnTypeInference,
+          operandTypeInference,
+          operandTypeChecker,
+          category);
+    }
+
+    @Override public SqlReturnTypeInference getRowTypeInference() {
+      throw new UnsupportedOperationException();
     }
   }
 }
