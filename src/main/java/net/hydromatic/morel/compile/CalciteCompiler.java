@@ -18,28 +18,30 @@
  */
 package net.hydromatic.morel.compile;
 
+import org.apache.calcite.DataContext;
+import org.apache.calcite.config.CalciteConnectionConfig;
+import org.apache.calcite.linq4j.Enumerable;
+import org.apache.calcite.linq4j.Linq4j;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.schema.ScannableTable;
+import org.apache.calcite.schema.Schema;
+import org.apache.calcite.schema.Statistic;
+import org.apache.calcite.schema.Statistics;
 import org.apache.calcite.schema.TableFunction;
+import org.apache.calcite.schema.impl.TableFunctionImpl;
 import org.apache.calcite.sql.SqlAggFunction;
-import org.apache.calcite.sql.SqlFunction;
-import org.apache.calcite.sql.SqlFunctionCategory;
+import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperator;
-import org.apache.calcite.sql.SqlTableFunction;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParserPos;
-import org.apache.calcite.sql.type.InferTypes;
 import org.apache.calcite.sql.type.OperandTypes;
-import org.apache.calcite.sql.type.ReturnTypes;
-import org.apache.calcite.sql.type.SqlOperandMetadata;
-import org.apache.calcite.sql.type.SqlOperandTypeChecker;
-import org.apache.calcite.sql.type.SqlOperandTypeInference;
-import org.apache.calcite.sql.type.SqlReturnTypeInference;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.validate.SqlUserDefinedTableFunction;
 import org.apache.calcite.tools.FrameworkConfig;
@@ -69,6 +71,7 @@ import net.hydromatic.morel.util.Pair;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -182,9 +185,10 @@ public class CalciteCompiler extends Compiler {
             }
           }
         }
-        final TableFunction tableFunction = null;
-        final Function<RelDataTypeFactory, List<RelDataType>>
-            typeInference = typeFactory -> ImmutableList.of();
+        final TableFunction tableFunction =
+            TableFunctionImpl.create(CalciteMorel.class, "eval0");
+        final Function<RelDataTypeFactory, List<RelDataType>> typeInference =
+            typeFactory -> ImmutableList.of();
         final SqlIdentifier name =
             new SqlIdentifier("morel", SqlParserPos.ZERO);
         final SqlOperator op =
@@ -195,7 +199,7 @@ public class CalciteCompiler extends Compiler {
                           .add("x", typeFactory.createSqlType(SqlTypeName.INTEGER))
                       .build();
                 },
-                (callBinding, returnType, operandTypes) -> 
+                (callBinding, returnType, operandTypes) ->
                     typeInference.apply(callBinding.getTypeFactory()),
                 OperandTypes.operandMetadata(ImmutableList.of(), typeInference,
                     o -> "op#" + o, o -> false),
@@ -618,23 +622,48 @@ public class CalciteCompiler extends Compiler {
     }
   }
 
-  private static class SqlMorelTableFunction extends SqlFunction
-      implements SqlTableFunction {
-    public SqlMorelTableFunction(String name, SqlKind kind,
-        SqlReturnTypeInference returnTypeInference,
-        SqlOperandTypeInference operandTypeInference,
-        SqlOperandTypeChecker operandTypeChecker,
-        SqlFunctionCategory category) {
-      super("",
-          kind,
-          returnTypeInference,
-          operandTypeInference,
-          operandTypeChecker,
-          category);
-    }
+  /** Calcite table-valued user-defined function that evaluates a Morel
+   * expression and returns the result as a relation. */
+  public static class CalciteMorel {
+    public ScannableTable eval0() {
+      return new ScannableTable() {
+        @Override public Enumerable<Object[]> scan(DataContext root) {
+          Object[][] rows = {
+              {0, 3, ""},
+              {1, 4, "m"},
+              {2, 5, "mo"},
+              {3, 6, "mor"},
+              {4, 7, "more"},
+              {5, 8, "morel"},
+          };
+          return Linq4j.asEnumerable(Arrays.asList(rows));
+        }
 
-    @Override public SqlReturnTypeInference getRowTypeInference() {
-      throw new UnsupportedOperationException();
+        @Override public RelDataType getRowType(RelDataTypeFactory factory) {
+          return factory.builder()
+              .add("i", factory.createSqlType(SqlTypeName.INTEGER))
+              .add("j", factory.createSqlType(SqlTypeName.INTEGER))
+              .add("s", factory.createSqlType(SqlTypeName.VARCHAR))
+              .build();
+        }
+
+        @Override public Statistic getStatistic() {
+          return Statistics.UNKNOWN;
+        }
+
+        @Override public Schema.TableType getJdbcTableType() {
+          return Schema.TableType.OTHER;
+        }
+
+        @Override public boolean isRolledUp(String column) {
+          return false;
+        }
+
+        @Override public boolean rolledUpColumnValidInsideAgg(String column,
+            SqlCall call, SqlNode parent, CalciteConnectionConfig config) {
+          return false;
+        }
+      };
     }
   }
 }

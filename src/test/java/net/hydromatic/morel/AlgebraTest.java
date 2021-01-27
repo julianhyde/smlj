@@ -224,8 +224,8 @@ public class AlgebraTest {
   @Test public void testNative() {
     String query = ""
         + "from r in\n"
-        + "  List.tabulate (5, fn i =>\n"
-        + "    {i, j = i + 3, s = String.substring (\"morel\", 1, i)})\n"
+        + "  List.tabulate (6, fn i =>\n"
+        + "    {i, j = i + 3, s = String.substring (\"morel\", 0, i)})\n"
         + "yield {r.j, r.s}";
     checkEqual(query);
   }
