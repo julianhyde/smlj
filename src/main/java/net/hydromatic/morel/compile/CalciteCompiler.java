@@ -24,6 +24,8 @@ import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.linq4j.Linq4j;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.JoinRelType;
+import org.apache.calcite.rel.externalize.RelJson;
+import org.apache.calcite.rel.externalize.RelJsonReader;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexNode;
@@ -41,12 +43,16 @@ import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParserPos;
+import org.apache.calcite.sql.type.InferTypes;
 import org.apache.calcite.sql.type.OperandTypes;
+import org.apache.calcite.sql.type.SqlOperandMetadata;
+import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.validate.SqlUserDefinedTableFunction;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
+import org.apache.calcite.util.JsonBuilder;
 import org.apache.calcite.util.Util;
 
 import com.google.common.collect.BiMap;
@@ -59,16 +65,23 @@ import com.google.common.collect.Ordering;
 import net.hydromatic.morel.ast.Ast;
 import net.hydromatic.morel.ast.Op;
 import net.hydromatic.morel.eval.Code;
+import net.hydromatic.morel.eval.Codes;
 import net.hydromatic.morel.eval.EvalEnv;
 import net.hydromatic.morel.eval.EvalEnvs;
 import net.hydromatic.morel.eval.Unit;
 import net.hydromatic.morel.foreign.RelList;
+import net.hydromatic.morel.parse.MorelParserImpl;
+import net.hydromatic.morel.parse.ParseException;
 import net.hydromatic.morel.type.Binding;
 import net.hydromatic.morel.type.ListType;
+import net.hydromatic.morel.type.PrimitiveType;
 import net.hydromatic.morel.type.RecordType;
 import net.hydromatic.morel.type.Type;
+import net.hydromatic.morel.type.TypeSystem;
 import net.hydromatic.morel.util.Pair;
 
+import java.io.IOException;
+import java.io.StringReader;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -187,24 +200,34 @@ public class CalciteCompiler extends Compiler {
         }
         final TableFunction tableFunction =
             TableFunctionImpl.create(CalciteMorel.class, "eval0");
-        final Function<RelDataTypeFactory, List<RelDataType>> typeInference =
-            typeFactory -> ImmutableList.of();
         final SqlIdentifier name =
             new SqlIdentifier("morel", SqlParserPos.ZERO);
+        final List<Arg> args =
+            ImmutableList.of(
+                Arg.of("code", f -> f.createSqlType(SqlTypeName.VARCHAR),
+                    SqlTypeFamily.STRING, false),
+                Arg.of("typeJson", f -> f.createSqlType(SqlTypeName.VARCHAR),
+                    SqlTypeFamily.STRING, false));
+        final Type type = typeMap.getType(apply);
+        final RelDataTypeFactory typeFactory = cx.relBuilder.getTypeFactory();
+        final RelDataType calciteType =
+            CalciteToMorelConverter.forMorel(type, typeFactory).calciteType;
+        final RelDataType rowType = calciteType.getComponentType();
         final SqlOperator op =
             new SqlUserDefinedTableFunction(name, SqlKind.OTHER_FUNCTION,
-                b -> {
-                  final RelDataTypeFactory typeFactory = b.getTypeFactory();
-                  return typeFactory.builder()
-                          .add("x", typeFactory.createSqlType(SqlTypeName.INTEGER))
-                      .build();
-                },
-                (callBinding, returnType, operandTypes) ->
-                    typeInference.apply(callBinding.getTypeFactory()),
-                OperandTypes.operandMetadata(ImmutableList.of(), typeInference,
-                    o -> "op#" + o, o -> false),
+                b -> CalciteToMorelConverter.forMorel(type, b.getTypeFactory())
+                    .calciteType,
+                InferTypes.ANY_NULLABLE, Arg.metadata(args),
                 tableFunction);
-        cx.relBuilder.functionScan(op, 0);
+        final JsonBuilder jsonBuilder = new JsonBuilder();
+        final String jsonRowType =
+            jsonBuilder.toJsonString(
+                new RelJson(jsonBuilder).toJson(rowType));
+        final String morelCode = apply.toString();
+        final List<RexNode> operands =
+            ImmutableList.of(cx.relBuilder.literal(morelCode),
+                cx.relBuilder.literal(jsonRowType));
+        cx.relBuilder.functionScan(op, 0, operands);
       }
     };
   }
@@ -622,12 +645,95 @@ public class CalciteCompiler extends Compiler {
     }
   }
 
+  /** Converter from Calcite types to Morel types. */
+  static class CalciteToMorelConverter {
+    final RelDataType calciteType;
+    final Type morelType;
+
+    CalciteToMorelConverter(RelDataType calciteType, Type morelType) {
+      this.calciteType = calciteType;
+      this.morelType = morelType;
+    }
+
+    /** Creates a converter for a given Morel type, in the process deducing the
+     * corresponding Calcite type. */
+    public static CalciteToMorelConverter forMorel(Type type,
+        RelDataTypeFactory typeFactory) {
+      switch (type.op()) {
+      case LIST:
+        final ListType listType = (ListType) type;
+        return new CalciteToMorelConverter(
+            typeFactory.createMultisetType(
+                forMorel(listType.elementType, typeFactory).calciteType, -1),
+            type);
+
+      case RECORD_TYPE:
+        final RelDataTypeFactory.Builder typeBuilder = typeFactory.builder();
+        final RecordType recordType = (RecordType) type;
+        recordType.argNameTypes.forEach((name, argType) ->
+            typeBuilder.add(name, forMorel(argType, typeFactory).calciteType));
+        return new CalciteToMorelConverter(typeBuilder.build(), type);
+
+      case ID:
+        final PrimitiveType primitiveType = (PrimitiveType) type;
+        switch (primitiveType) {
+        case BOOL:
+          return new CalciteToMorelConverter(
+              typeFactory.createSqlType(SqlTypeName.BOOLEAN), type);
+        case INT:
+          return new CalciteToMorelConverter(
+              typeFactory.createSqlType(SqlTypeName.INTEGER), type);
+        case REAL:
+          return new CalciteToMorelConverter(
+              typeFactory.createSqlType(SqlTypeName.REAL), type);
+        case CHAR:
+          return new CalciteToMorelConverter(
+              typeFactory.createSqlType(SqlTypeName.SMALLINT), type);
+        case UNIT:
+          return new CalciteToMorelConverter(
+              typeFactory.createSqlType(SqlTypeName.TINYINT), type);
+        case STRING:
+          return new CalciteToMorelConverter(
+              typeFactory.createSqlType(SqlTypeName.VARCHAR, -1), type);
+        default:
+          throw new AssertionError("unknown type " + type);
+        }
+      }
+      throw new UnsupportedOperationException("cannot convert type " + type);
+    }
+  }
+
   /** Calcite table-valued user-defined function that evaluates a Morel
    * expression and returns the result as a relation. */
   public static class CalciteMorel {
-    public ScannableTable eval0() {
+    public ScannableTable eval0(String ml, String typeJson) {
+      final Code code;
+      try {
+        final Ast.Exp e = new MorelParserImpl(new StringReader(ml)).expression();
+        final TypeSystem typeSystem = new TypeSystem();
+        final Environment env =
+            Environments.env(typeSystem, ImmutableMap.of());
+        final Ast.ValDecl valDecl = Compiles.toValDecl(e);
+        final TypeResolver.Resolved resolved =
+            TypeResolver.deduceType(env, valDecl, typeSystem);
+        final Ast.ValDecl valDecl2 = (Ast.ValDecl) resolved.node;
+        final Ast.Exp e2 = Compiles.toExp(valDecl2);
+        code = new Compiler(resolved.typeMap).compile(env, e2);
+      } catch (ParseException pe) {
+        throw new RuntimeException(pe);
+      }
       return new ScannableTable() {
+        @Override public RelDataType getRowType(RelDataTypeFactory factory) {
+          try {
+            return RelJsonReader.readType(factory, typeJson);
+          } catch (IOException e) {
+            throw new RuntimeException(e);
+          }
+        }
+
         @Override public Enumerable<Object[]> scan(DataContext root) {
+          final EvalEnv evalEnv = Codes.emptyEnv();
+          Object v = code.eval(evalEnv);
           Object[][] rows = {
               {0, 3, ""},
               {1, 4, "m"},
@@ -637,14 +743,6 @@ public class CalciteCompiler extends Compiler {
               {5, 8, "morel"},
           };
           return Linq4j.asEnumerable(Arrays.asList(rows));
-        }
-
-        @Override public RelDataType getRowType(RelDataTypeFactory factory) {
-          return factory.builder()
-              .add("i", factory.createSqlType(SqlTypeName.INTEGER))
-              .add("j", factory.createSqlType(SqlTypeName.INTEGER))
-              .add("s", factory.createSqlType(SqlTypeName.VARCHAR))
-              .build();
         }
 
         @Override public Statistic getStatistic() {
@@ -664,6 +762,85 @@ public class CalciteCompiler extends Compiler {
           return false;
         }
       };
+    }
+  }
+
+  /** Operand to a user-defined function. */
+  private interface Arg {
+    String name();
+    RelDataType type(RelDataTypeFactory typeFactory);
+    SqlTypeFamily family();
+    boolean optional();
+
+    @SuppressWarnings({"StaticPseudoFunctionalStyleMethod",
+        "ConstantConditions"})
+    static SqlOperandMetadata metadata(List<Arg> args) {
+      return OperandTypes.operandMetadata(Lists.transform(args, Arg::family),
+          typeFactory -> Lists.transform(args, arg -> arg.type(typeFactory)),
+          i -> args.get(i).name(), i -> args.get(i).optional());
+    }
+
+    static Arg of(String name,
+        Function<RelDataTypeFactory, RelDataType> protoType,
+        SqlTypeFamily family, boolean optional) {
+      return new Arg() {
+        @Override public String name() {
+          return name;
+        }
+
+        @Override public RelDataType type(RelDataTypeFactory typeFactory) {
+          return protoType.apply(typeFactory);
+        }
+
+        @Override public SqlTypeFamily family() {
+          return family;
+        }
+
+        @Override public boolean optional() {
+          return optional;
+        }
+      };
+    }
+  }
+
+  /** Converts Morel types to JSON. */
+  private static class MorelRelJson extends RelJson {
+    private final JsonBuilder jsonBuilder;
+
+    MorelRelJson(JsonBuilder jsonBuilder) {
+      super(jsonBuilder);
+      this.jsonBuilder = jsonBuilder;
+    }
+
+    @Override public Object toJson(Object value) {
+      if (value instanceof Type) {
+        return toJson((Type) value);
+      }
+      return super.toJson(value);
+    }
+
+    public Object toJson(Type type) {
+      if (type instanceof PrimitiveType) {
+        return ((PrimitiveType) type).moniker;
+      } else if (type instanceof ListType) {
+        final Map<String, Object> map = jsonBuilder.map();
+        ListType listType = (ListType) type;
+        map.put("list", toJson(listType.elementType));
+        return map;
+      } else if (type instanceof RecordType) {
+        final Map<String, Object> map = jsonBuilder.map();
+        RecordType recordType = (RecordType) type;
+        final List<Object> list = jsonBuilder.list();
+        recordType.argNameTypes.forEach((name, argType) -> {
+          final Map<String, Object> map2 = jsonBuilder.map();
+          map2.put(name, toJson(argType));
+          list.add(map2);
+        });
+        map.put("record", list);
+        return map;
+      } else {
+        throw new AssertionError("unknown type " + type);
+      }
     }
   }
 }
