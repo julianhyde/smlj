@@ -21,6 +21,7 @@ package net.hydromatic.morel.compile;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.linq4j.Enumerable;
+import org.apache.calcite.linq4j.EnumerableDefaults;
 import org.apache.calcite.linq4j.Linq4j;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.JoinRelType;
@@ -84,7 +85,6 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -701,28 +701,52 @@ public class CalciteCompiler extends Compiler {
       }
       throw new UnsupportedOperationException("cannot convert type " + type);
     }
+
+    public Enumerable<Object[]> toEnumerable(Object v) {
+      @SuppressWarnings("unchecked")
+      final Enumerable<Object> enumerable =
+          Linq4j.asEnumerable((List<Object>) v);
+      switch (morelType.op()) {
+      case LIST:
+        final ListType listType = (ListType) morelType;
+        final CalciteToMorelConverter c =
+            new CalciteToMorelConverter(calciteType.getComponentType(),
+                listType.elementType);
+        return EnumerableDefaults.select(enumerable, c::toArray);
+      default:
+        throw new AssertionError("cannot convert " + morelType);
+      }
+    }
+
+    private Object[] toArray(Object o) {
+      @SuppressWarnings("unchecked")
+      List<Object> list = (List<Object>) o;
+      return list.toArray();
+    }
   }
 
   /** Calcite table-valued user-defined function that evaluates a Morel
    * expression and returns the result as a relation. */
   public static class CalciteMorel {
     public ScannableTable eval0(String ml, String typeJson) {
-      final Code code;
+      final Ast.Exp e;
       try {
-        final Ast.Exp e = new MorelParserImpl(new StringReader(ml)).expression();
-        final TypeSystem typeSystem = new TypeSystem();
-        final Environment env =
-            Environments.env(typeSystem, ImmutableMap.of());
-        final Ast.ValDecl valDecl = Compiles.toValDecl(e);
-        final TypeResolver.Resolved resolved =
-            TypeResolver.deduceType(env, valDecl, typeSystem);
-        final Ast.ValDecl valDecl2 = (Ast.ValDecl) resolved.node;
-        final Ast.Exp e2 = Compiles.toExp(valDecl2);
-        code = new Compiler(resolved.typeMap).compile(env, e2);
+        e = new MorelParserImpl(new StringReader(ml)).expression();
       } catch (ParseException pe) {
         throw new RuntimeException(pe);
       }
+      final TypeSystem typeSystem = new TypeSystem();
+      final Environment env =
+          Environments.env(typeSystem, ImmutableMap.of());
+      final Ast.ValDecl valDecl = Compiles.toValDecl(e);
+      final TypeResolver.Resolved resolved =
+          TypeResolver.deduceType(env, valDecl, typeSystem);
+      final Ast.ValDecl valDecl2 = (Ast.ValDecl) resolved.node;
+      final Ast.Exp e2 = Compiles.toExp(valDecl2);
+      Type type = resolved.typeMap.getType(e2);
+      final Code code = new Compiler(resolved.typeMap).compile(env, e2);
       return new ScannableTable() {
+
         @Override public RelDataType getRowType(RelDataTypeFactory factory) {
           try {
             return RelJsonReader.readType(factory, typeJson);
@@ -732,17 +756,11 @@ public class CalciteCompiler extends Compiler {
         }
 
         @Override public Enumerable<Object[]> scan(DataContext root) {
+          final CalciteToMorelConverter converter =
+              CalciteToMorelConverter.forMorel(type, root.getTypeFactory());
           final EvalEnv evalEnv = Codes.emptyEnv();
           Object v = code.eval(evalEnv);
-          Object[][] rows = {
-              {0, 3, ""},
-              {1, 4, "m"},
-              {2, 5, "mo"},
-              {3, 6, "mor"},
-              {4, 7, "more"},
-              {5, 8, "morel"},
-          };
-          return Linq4j.asEnumerable(Arrays.asList(rows));
+          return converter.toEnumerable(v);
         }
 
         @Override public Statistic getStatistic() {
