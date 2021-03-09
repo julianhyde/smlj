@@ -1119,6 +1119,34 @@ val it =
   : {deptno:int, id:int, name:string} list
 
 
+(*) Hybrid
+from r in
+  List.tabulate (6, fn i =>
+    {i, j = i + 3, s = String.substring ("morel", 0, i)})
+yield {r.j, r.s};
+val it =
+  [{j=3,s=""},{j=4,s="m"},{j=5,s="mo"},{j=6,s="mor"},{j=7,s="more"},
+   {j=8,s="morel"}] : {j:'a, s:string} list
+
+Sys.plan();
+val it =
+  "from(r, apply(fnValue List.tabulate, argCode tuple(constant(6), match(i, tuple(get(name i), apply(fnValue +, argCode tuple(get(name i), constant(3))), apply(fnValue String.substring, argCode tuple(constant(morel), constant(0), get(name i))))))))"
+  : string
+
+
+Sys.set ("hybrid", false);
+val it = () : unit
+
+Sys.show "hybrid";
+val it = SOME "false" : string option
+
+Sys.set ("hybrid", true);
+val it = () : unit
+
+Sys.show "hybrid";
+val it = SOME "true" : string option
+
+
 (*) dummy
 from message in ["the end"];
 val it = ["the end"] : string list

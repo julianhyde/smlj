@@ -676,6 +676,18 @@ from e in
      yield e)
    yield e);
 
+(*) Hybrid
+from r in
+  List.tabulate (6, fn i =>
+    {i, j = i + 3, s = String.substring ("morel", 0, i)})
+yield {r.j, r.s};
+Sys.plan();
+
+Sys.set ("hybrid", false);
+Sys.show "hybrid";
+Sys.set ("hybrid", true);
+Sys.show "hybrid";
+
 (*) dummy
 from message in ["the end"];
 

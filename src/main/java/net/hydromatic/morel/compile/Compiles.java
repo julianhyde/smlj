@@ -56,7 +56,7 @@ public abstract class Compiles {
     } else {
       decl = (Ast.Decl) statement;
     }
-    return prepareDecl(typeSystem, env, decl);
+    return prepareDecl(typeSystem, session, env, decl);
   }
 
   /**
@@ -64,10 +64,14 @@ public abstract class Compiles {
    * code that can be evaluated by the interpreter.
    */
   private static CompiledStatement prepareDecl(TypeSystem typeSystem,
-      Environment env, Ast.Decl decl) {
+      Session session, Environment env, Ast.Decl decl) {
     final TypeResolver.Resolved resolved =
         TypeResolver.deduceType(env, decl, typeSystem);
-    final Compiler compiler = new Compiler(resolved.typeMap);
+    final boolean hybrid = session.map.get("hybrid") != null
+        && session.map.get("hybrid").equals(true);
+    final Compiler compiler =
+        hybrid ? new CalciteCompiler(resolved.typeMap)
+            : new Compiler(resolved.typeMap);
     return compiler.compileStatement(env, resolved.node);
   }
 

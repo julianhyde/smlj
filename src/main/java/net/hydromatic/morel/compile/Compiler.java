@@ -18,6 +18,13 @@
  */
 package net.hydromatic.morel.compile;
 
+import org.apache.calcite.DataContext;
+import org.apache.calcite.interpreter.Interpreter;
+import org.apache.calcite.linq4j.Enumerable;
+import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.schema.Schemas;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 
@@ -32,6 +39,7 @@ import net.hydromatic.morel.eval.Describer;
 import net.hydromatic.morel.eval.EvalEnv;
 import net.hydromatic.morel.eval.Session;
 import net.hydromatic.morel.eval.Unit;
+import net.hydromatic.morel.foreign.Converters;
 import net.hydromatic.morel.type.Binding;
 import net.hydromatic.morel.type.DataType;
 import net.hydromatic.morel.type.ListType;
@@ -49,6 +57,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static net.hydromatic.morel.ast.Ast.Direction.DESC;
@@ -618,7 +627,7 @@ public class Compiler {
   private void compileValBind(Context cx, Ast.ValBind valBind,
       List<Code> varCodes, List<Binding> bindings, List<Action> actions) {
     final List<Binding> newBindings = new TailList<>(bindings);
-    final Code code;
+    final Code code0;
     if (valBind.rec) {
       final Map<Ast.IdPat, LinkCode> linkCodes = new IdentityHashMap<>();
       valBind.pat.visit(pat -> {
@@ -630,10 +639,33 @@ public class Compiler {
           bindings.add(Binding.of(idPat.name, paramType, linkCode));
         }
       });
-      code = compile(cx.bindAll(bindings), valBind.e);
-      link(linkCodes, valBind.pat, code);
+      code0 = compile(cx.bindAll(bindings), valBind.e);
+      link(linkCodes, valBind.pat, code0);
     } else {
-      code = compile(cx.bindAll(bindings), valBind.e);
+      code0 = compile(cx.bindAll(bindings), valBind.e);
+    }
+    final Code code;
+    if (code0 instanceof CalciteCompiler.RelCode) {
+      final CalciteCompiler.RelCode relCode = (CalciteCompiler.RelCode) code0;
+      final Environment env = cx.bindAll(bindings).env;
+      final RelNode rel = ((CalciteCompiler) this).toRel(env, valBind.e);
+      final DataContext dataContext = Schemas.createDataContext(null, null);
+      final Interpreter interpreter = new Interpreter(dataContext, rel);
+      final Type type = typeMap.getType(valBind.e);
+      final Function<Enumerable<Object[]>, List<Object>> converter =
+          Converters.fromEnumerable(rel, type);
+      code = new Code() {
+        @Override public Describer describe(Describer describer) {
+          return describer.start("calcite", d ->
+              d.arg("plan", RelOptUtil.toString(rel)));
+        }
+
+        @Override public Object eval(EvalEnv evalEnv) {
+          return converter.apply(interpreter);
+        }
+      };
+    } else {
+      code = code0;
     }
     newBindings.clear();
     final ImmutableList<Pair<Ast.Pat, Code>> patCodes =
