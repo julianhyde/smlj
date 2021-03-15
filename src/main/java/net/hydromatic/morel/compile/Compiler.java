@@ -23,7 +23,6 @@ import org.apache.calcite.interpreter.Interpreter;
 import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.schema.Schemas;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
@@ -649,21 +648,26 @@ public class Compiler {
       final CalciteCompiler.RelCode relCode = (CalciteCompiler.RelCode) code0;
       final Environment env = cx.bindAll(bindings).env;
       final RelNode rel = ((CalciteCompiler) this).toRel(env, valBind.e);
-      final DataContext dataContext = Schemas.createDataContext(null, null);
-      final Interpreter interpreter = new Interpreter(dataContext, rel);
-      final Type type = typeMap.getType(valBind.e);
-      final Function<Enumerable<Object[]>, List<Object>> converter =
-          Converters.fromEnumerable(rel, type);
-      code = new Code() {
-        @Override public Describer describe(Describer describer) {
-          return describer.start("calcite", d ->
-              d.arg("plan", RelOptUtil.toString(rel)));
-        }
+      if (rel == null) {
+        code = code0;
+      } else {
+        final DataContext dataContext =
+            ((CalciteCompiler) this).calcite.dataContext;
+        final Interpreter interpreter = new Interpreter(dataContext, rel);
+        final Type type = typeMap.getType(valBind.e);
+        final Function<Enumerable<Object[]>, List<Object>> converter =
+            Converters.fromEnumerable(rel, type);
+        code = new Code() {
+          @Override public Describer describe(Describer describer) {
+            return describer.start("calcite", d ->
+                d.arg("plan", RelOptUtil.toString(rel)));
+          }
 
-        @Override public Object eval(EvalEnv evalEnv) {
-          return converter.apply(interpreter);
-        }
-      };
+          @Override public Object eval(EvalEnv evalEnv) {
+            return converter.apply(interpreter);
+          }
+        };
+      }
     } else {
       code = code0;
     }

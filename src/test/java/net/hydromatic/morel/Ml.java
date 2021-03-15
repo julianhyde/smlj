@@ -229,8 +229,9 @@ class Ml {
           TypeResolver.deduceType(env, valDecl, typeSystem);
       final Ast.ValDecl valDecl2 = (Ast.ValDecl) resolved.node;
       final RelNode rel =
-          new CalciteCompiler(resolved.typeMap)
+          new CalciteCompiler(resolved.typeMap, calcite)
               .toRel(env, Compiles.toExp(valDecl2));
+      Objects.requireNonNull(rel);
       final String relString = RelOptUtil.toString(rel);
       assertThat(relString, matcher);
       return this;
@@ -337,8 +338,9 @@ class Ml {
   private Object evalCalcite(Calcite calcite, Environment env,
       TypeResolver.Resolved resolved, Ast.Exp e) {
     final RelNode rel =
-        new CalciteCompiler(resolved.typeMap)
+        new CalciteCompiler(resolved.typeMap, calcite)
             .toRel(env, e);
+    Objects.requireNonNull(rel);
     final DataContext dataContext = calcite.dataContext;
     final Interpreter interpreter = new Interpreter(dataContext, rel);
     final Type type = resolved.typeMap.getType(e);

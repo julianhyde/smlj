@@ -32,6 +32,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
 import net.hydromatic.morel.eval.Unit;
+import net.hydromatic.morel.type.DataType;
 import net.hydromatic.morel.type.ListType;
 import net.hydromatic.morel.type.PrimitiveType;
 import net.hydromatic.morel.type.RecordType;
@@ -131,7 +132,7 @@ public class Converters {
 
   public static RelDataType toCalciteType(Type type,
       RelDataTypeFactory typeFactory) {
-    return C2m.forMorel(type, typeFactory).calciteType;
+    return C2m.forMorel(type, typeFactory, false).calciteType;
   }
 
   /** Returns a function that converts from Morel objects to an Enumerable
@@ -139,7 +140,7 @@ public class Converters {
   public static Function<Object, Enumerable<Object[]>> toCalciteEnumerable(
       Type type, RelDataTypeFactory typeFactory) {
     final C2m converter =
-        C2m.forMorel(type, typeFactory);
+        C2m.forMorel(type, typeFactory, false);
     return converter::toEnumerable;
   }
 
@@ -239,20 +240,30 @@ public class Converters {
     /** Creates a converter for a given Morel type, in the process deducing the
      * corresponding Calcite type. */
     static C2m forMorel(Type type,
-        RelDataTypeFactory typeFactory) {
+        RelDataTypeFactory typeFactory,
+        boolean nullable) {
       switch (type.op()) {
+      case DATA_TYPE:
+        final DataType dataType = (DataType) type;
+        if (dataType.name.equals("option")) {
+          return forMorel(dataType.typeVars.get(0), typeFactory, true);
+        }
+        throw new AssertionError("unknown type " + type);
+
       case LIST:
         final ListType listType = (ListType) type;
         return new C2m(
             typeFactory.createMultisetType(
-                forMorel(listType.elementType, typeFactory).calciteType, -1),
+                forMorel(listType.elementType, typeFactory, nullable)
+                    .calciteType, -1),
             type);
 
       case RECORD_TYPE:
         final RelDataTypeFactory.Builder typeBuilder = typeFactory.builder();
         final RecordType recordType = (RecordType) type;
         recordType.argNameTypes.forEach((name, argType) ->
-            typeBuilder.add(name, forMorel(argType, typeFactory).calciteType));
+            typeBuilder.add(name,
+                forMorel(argType, typeFactory, nullable).calciteType));
         return new C2m(typeBuilder.build(), type);
 
       case ID:
@@ -260,22 +271,34 @@ public class Converters {
         switch (primitiveType) {
         case BOOL:
           return new C2m(
-              typeFactory.createSqlType(SqlTypeName.BOOLEAN), type);
+              typeFactory.createTypeWithNullability(
+                  typeFactory.createSqlType(SqlTypeName.BOOLEAN), nullable),
+              type);
         case INT:
           return new C2m(
-              typeFactory.createSqlType(SqlTypeName.INTEGER), type);
+              typeFactory.createTypeWithNullability(
+                  typeFactory.createSqlType(SqlTypeName.INTEGER), nullable),
+              type);
         case REAL:
           return new C2m(
-              typeFactory.createSqlType(SqlTypeName.REAL), type);
+              typeFactory.createTypeWithNullability(
+                  typeFactory.createSqlType(SqlTypeName.REAL), nullable),
+              type);
         case CHAR:
           return new C2m(
-              typeFactory.createSqlType(SqlTypeName.SMALLINT), type);
+              typeFactory.createTypeWithNullability(
+                  typeFactory.createSqlType(SqlTypeName.SMALLINT), nullable),
+              type);
         case UNIT:
           return new C2m(
-              typeFactory.createSqlType(SqlTypeName.TINYINT), type);
+              typeFactory.createTypeWithNullability(
+              typeFactory.createSqlType(SqlTypeName.TINYINT), nullable),
+              type);
         case STRING:
           return new C2m(
-              typeFactory.createSqlType(SqlTypeName.VARCHAR, -1), type);
+              typeFactory.createTypeWithNullability(
+                  typeFactory.createSqlType(SqlTypeName.VARCHAR, -1), nullable),
+              type);
         default:
           throw new AssertionError("unknown type " + type);
         }

@@ -1120,6 +1120,9 @@ val it =
 
 
 (*) Hybrid
+Sys.set ("hybrid", false);
+val it = () : unit
+
 from r in
   List.tabulate (6, fn i =>
     {i, j = i + 3, s = String.substring ("morel", 0, i)})
@@ -1134,17 +1137,43 @@ val it =
   : string
 
 
-Sys.set ("hybrid", false);
-val it = () : unit
-
-Sys.show "hybrid";
-val it = SOME "false" : string option
-
 Sys.set ("hybrid", true);
 val it = () : unit
 
-Sys.show "hybrid";
-val it = SOME "true" : string option
+from r in
+  List.tabulate (6, fn i =>
+    {i, j = i + 3, s = String.substring ("morel", 0, i)})
+yield {r.j, r.s};
+val it =
+  [{j=3,s=""},{j=4,s="m"},{j=5,s="mo"},{j=6,s="mor"},{j=7,s="more"},
+   {j=8,s="morel"}] : {j:'a, s:string} list
+
+Sys.plan();
+val it =
+  "calcite(plan LogicalProject(j=[$1], s=[$2])
+  LogicalTableFunctionScan(invocation=[morel('#tabulate List (6, fn i => {i = i, j = i + 3, s = #substring String (\"morel\", 0, i)})', '{
+  \"fields\": [
+    {
+      \"type\": \"INTEGER\",
+      \"nullable\": false,
+      \"name\": \"i\"
+    },
+    {
+      \"type\": \"INTEGER\",
+      \"nullable\": false,
+      \"name\": \"j\"
+    },
+    {
+      \"type\": \"VARCHAR\",
+      \"nullable\": false,
+      \"precision\": -1,
+      \"name\": \"s\"
+    }
+  ],
+  \"nullable\": false
+}')], rowType=[RecordType(INTEGER i, INTEGER j, VARCHAR s)])
+)"
+  : string
 
 
 (*) dummy
