@@ -618,9 +618,8 @@ public class Compiler {
   private void compileValBind(Context cx, Ast.ValBind valBind,
       List<Code> varCodes, List<Binding> bindings, List<Action> actions) {
     final List<Binding> newBindings = new TailList<>(bindings);
-    final Code code;
+    final Map<Ast.IdPat, LinkCode> linkCodes = new IdentityHashMap<>();
     if (valBind.rec) {
-      final Map<Ast.IdPat, LinkCode> linkCodes = new IdentityHashMap<>();
       valBind.pat.visit(pat -> {
         if (pat instanceof Ast.IdPat) {
           final Ast.IdPat idPat = (Ast.IdPat) pat;
@@ -630,21 +629,16 @@ public class Compiler {
           bindings.add(Binding.of(idPat.name, paramType, linkCode));
         }
       });
-      final Context cx1 = cx.bindAll(bindings);
-      final Code code1 = refine(cx1.env, valBind.e);
-      if (code1 != null) {
-        code = code1;
-      } else {
-        code = compile(cx1, valBind.e);
-        link(linkCodes, valBind.pat, code);
-      }
+    }
+    final Context cx1 = cx.bindAll(bindings);
+    final Code code1 = refine(cx1.env, valBind.e);
+    final Code code;
+    if (code1 != null) {
+      code = code1;
     } else {
-      final Context cx1 = cx.bindAll(bindings);
-      final Code code1 = refine(cx1.env, valBind.e);
-      if (code1 != null) {
-        code = code1;
-      } else {
-        code = compile(cx1, valBind.e);
+      code = compile(cx1, valBind.e);
+      if (!linkCodes.isEmpty()) {
+        link(linkCodes, valBind.pat, code);
       }
     }
     newBindings.clear();
