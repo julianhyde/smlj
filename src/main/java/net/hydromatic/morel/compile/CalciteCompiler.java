@@ -18,6 +18,10 @@
  */
 package net.hydromatic.morel.compile;
 
+import org.apache.calcite.DataContext;
+import org.apache.calcite.interpreter.Interpreter;
+import org.apache.calcite.linq4j.Enumerable;
+import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.externalize.RelJson;
@@ -581,6 +585,28 @@ public class CalciteCompiler extends Compiler {
       }
     }
     throw new AssertionError("unknown aggregate function: " + aggregate);
+  }
+
+  @Override protected Code refine(Environment env, Ast.Exp e) {
+    final RelNode rel = toRel(env, e);
+    if (rel == null) {
+      return null;
+    }
+    final DataContext dataContext = calcite.dataContext;
+    final Interpreter interpreter = new Interpreter(dataContext, rel);
+    final Type type = typeMap.getType(e);
+    final Function<Enumerable<Object[]>, List<Object>> converter =
+        Converters.fromEnumerable(rel, type);
+    return new Code() {
+      @Override public Describer describe(Describer describer) {
+        return describer.start("calcite", d ->
+            d.arg("plan", RelOptUtil.toString(rel)));
+      }
+
+      @Override public Object eval(EvalEnv evalEnv) {
+        return converter.apply(interpreter);
+      }
+    };
   }
 
   private static EvalEnv evalEnvOf(Environment env) {
